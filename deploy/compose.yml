@@ -49,6 +49,8 @@ services:
       <<: *build
       args:
         MODULE: gateway
+    environment:
+      SWITCHBOARD_BACKEND_URL: http://mock-llm:8090/v1
     ports:
       - "8080:8080"
 

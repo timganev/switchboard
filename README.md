@@ -204,11 +204,32 @@ curl localhost:8080/actuator/health
 The system tests read each service's base URL from an environment variable, for example
 `GATEWAY_BASE_URL=http://localhost:8080`, and skip a service whose variable is not set.
 
+### Try it without Docker
+
+The gateway already speaks both APIs and forwards to any OpenAI-compatible backend
+(`switchboard.backend.url`, default `http://localhost:8090/v1`, the fake provider).
+
+```bash
+./mvnw -B package -DskipTests
+java -jar mock-llm/target/mock-llm-0.1.0-SNAPSHOT.jar &
+java -jar gateway/target/gateway-0.1.0-SNAPSHOT.jar &
+
+curl localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model": "qwen36", "messages": [{"role": "user", "content": "Hi"}]}'
+
+curl localhost:8080/v1/messages -H 'Content-Type: application/json' \
+  -d '{"model": "qwen36", "max_tokens": 100, "system": "Be brief.", "messages": [{"role": "user", "content": "Hi"}]}'
+```
+
 ## Roadmap
 
 - [x] **Skeleton:** all services start and report health, event contracts, fake provider, CI
-- [ ] **1. Door and dispatcher:** OpenAI and Anthropic formats, streaming, the in-flight board across
-      local instances and a cloud provider; coding agents work through Switchboard by changing only the base URL
+- [ ] **1. Door and dispatcher:** coding agents work through Switchboard by changing only the base URL
+  - [x] OpenAI and Anthropic formats through one internal model: text, system prompt, tool calls and results
+  - [x] Both APIs forward to an OpenAI-compatible backend, with timeouts and errors in the caller's format
+  - [ ] Streaming
+  - [ ] The in-flight board across local instances and a cloud provider
+  - [ ] Images and other multimodal content
 - [ ] **2. Guardian:** deterministic detectors, deterministic surrogates and restore, fail-closed local route
 - [ ] **3. Events:** ledger with budgets, trace, live view
 - [ ] **4. Leak Lab and the decision model slot:** leakage, quality, cost and latency per strategy
