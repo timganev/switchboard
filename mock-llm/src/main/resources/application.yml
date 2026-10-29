@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: mock-llm
+
+server:
+  port: 8090

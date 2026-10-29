@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: trace
+
+server:
+  port: 8083

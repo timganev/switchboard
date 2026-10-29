@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: guardian
+
+server:
+  port: 8081

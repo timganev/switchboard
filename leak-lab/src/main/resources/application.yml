@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: leak-lab
+
+server:
+  port: 8084
