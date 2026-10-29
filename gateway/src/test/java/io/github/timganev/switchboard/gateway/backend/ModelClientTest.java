@@ -5,18 +5,22 @@ import io.github.timganev.switchboard.commons.chat.ChatRequest;
 import io.github.timganev.switchboard.commons.chat.ChatResponse;
 import io.github.timganev.switchboard.commons.chat.Role;
 import io.github.timganev.switchboard.commons.chat.StopReason;
+import io.github.timganev.switchboard.commons.chat.StreamEvent;
 import io.github.timganev.switchboard.commons.chat.TextPart;
 import io.github.timganev.switchboard.commons.chat.Usage;
 import io.github.timganev.switchboard.gateway.format.OpenAiFormat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +29,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class ModelClientTest {
@@ -39,7 +44,8 @@ class ModelClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://backend/v1");
         backend = MockRestServiceServer.bindTo(builder).build();
-        modelClient = new ModelClient(builder.build(), new OpenAiFormat(new JsonMapper()));
+        JsonMapper jsonMapper = new JsonMapper();
+        modelClient = new ModelClient(builder.build(), new OpenAiFormat(jsonMapper), jsonMapper);
     }
 
     @Test
@@ -67,5 +73,55 @@ class ModelClientTest {
         backend.expect(requestTo("http://backend/v1/chat/completions")).andRespond(withServerError());
 
         assertThatThrownBy(() -> modelClient.send(REQUEST)).isInstanceOf(HttpServerErrorException.class);
+    }
+
+    @Test
+    void shouldStreamEventsUntilDone() throws Exception {
+        backend.expect(requestTo("http://backend/v1/chat/completions"))
+                .andExpect(jsonPath("$.stream").value(true))
+                .andExpect(jsonPath("$.stream_options.include_usage").value(true))
+                .andRespond(withSuccess("""
+                        data: {"id": "c1", "model": "qwen36", "choices": [{"index": 0, "delta": {"content": "Hi"}, "finish_reason": "stop"}]}
+
+                        data: {"id": "c1", "model": "qwen36", "choices": [], "usage": {"prompt_tokens": 3, "completion_tokens": 1}}
+
+                        data: [DONE]
+
+                        """, MediaType.TEXT_EVENT_STREAM));
+        List<StreamEvent> events = new ArrayList<>();
+
+        try (ModelStream stream = modelClient.openStream(REQUEST)) {
+            stream.forEach(events::add);
+        }
+
+        assertThat(events).containsExactly(
+                new StreamEvent.MessageStarted("c1", "qwen36"),
+                new StreamEvent.TextDelta("Hi"),
+                new StreamEvent.MessageFinished(StopReason.END_TURN, new Usage(3, 1)));
+    }
+
+    @Test
+    void shouldFailBeforeStreamingWhenBackendRejectsTheRequest() {
+        backend.expect(requestTo("http://backend/v1/chat/completions"))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).body("slow down"));
+
+        assertThatThrownBy(() -> modelClient.openStream(REQUEST))
+                .isInstanceOf(RestClientResponseException.class)
+                .hasMessage("Backend returned 429");
+    }
+
+    @Test
+    void shouldFailWhenStreamEndsWithoutDone() {
+        backend.expect(requestTo("http://backend/v1/chat/completions"))
+                .andRespond(withSuccess("""
+                        data: {"id": "c1", "model": "qwen36", "choices": [{"index": 0, "delta": {"content": "Hi"}}]}
+
+                        """, MediaType.TEXT_EVENT_STREAM));
+
+        assertThatThrownBy(() -> {
+            try (ModelStream stream = modelClient.openStream(REQUEST)) {
+                stream.forEach(event -> { });
+            }
+        }).hasMessage("The backend stream ended without [DONE]");
     }
 }

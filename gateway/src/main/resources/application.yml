@@ -1,6 +1,10 @@
 spring:
   application:
     name: gateway
+  mvc:
+    async:
+      # Streamed answers from slow local models can run for minutes.
+      request-timeout: 10m
 
 server:
   port: 8080

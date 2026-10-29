@@ -219,6 +219,9 @@ curl localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
 
 curl localhost:8080/v1/messages -H 'Content-Type: application/json' \
   -d '{"model": "qwen36", "max_tokens": 100, "system": "Be brief.", "messages": [{"role": "user", "content": "Hi"}]}'
+
+curl -N localhost:8080/v1/messages -H 'Content-Type: application/json' \
+  -d '{"model": "qwen36", "max_tokens": 100, "stream": true, "messages": [{"role": "user", "content": "Hi"}]}'
 ```
 
 ## Roadmap
@@ -227,7 +230,7 @@ curl localhost:8080/v1/messages -H 'Content-Type: application/json' \
 - [ ] **1. Door and dispatcher:** coding agents work through Switchboard by changing only the base URL
   - [x] OpenAI and Anthropic formats through one internal model: text, system prompt, tool calls and results
   - [x] Both APIs forward to an OpenAI-compatible backend, with timeouts and errors in the caller's format
-  - [ ] Streaming
+  - [x] Streaming in both formats; a backend error before the first byte is still a clean 502
   - [ ] The in-flight board across local instances and a cloud provider
   - [ ] Images and other multimodal content
 - [ ] **2. Guardian:** deterministic detectors, deterministic surrogates and restore, fail-closed local route
