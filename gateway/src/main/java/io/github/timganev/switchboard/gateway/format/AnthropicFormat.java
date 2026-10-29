@@ -36,20 +36,26 @@ public class AnthropicFormat {
     }
 
     public ChatRequest readRequest(JsonNode json) {
+        List<String> systemTexts = new ArrayList<>();
+        JsonNode system = json.get("system");
+        if (system != null && !system.isNull()) {
+            systemTexts.add(readText(system));
+        }
         List<ChatMessage> messages = new ArrayList<>();
         for (JsonNode message : FormatSupport.required(json, "messages")) {
             String role = FormatSupport.requiredText(message, "role");
-            Role internalRole = switch (role) {
-                case "user" -> Role.USER;
-                case "assistant" -> Role.ASSISTANT;
+            JsonNode content = FormatSupport.required(message, "content");
+            switch (role) {
+                case "user" -> messages.add(new ChatMessage(Role.USER, readParts(content)));
+                case "assistant" -> messages.add(new ChatMessage(Role.ASSISTANT, readParts(content)));
+                // Claude Code sends reminders as mid-conversation system messages; local chat templates accept one system prompt up front.
+                case "system" -> systemTexts.add(readText(content));
                 default -> throw new IllegalArgumentException("Unsupported message role: " + role);
-            };
-            messages.add(new ChatMessage(internalRole, readParts(FormatSupport.required(message, "content"))));
+            }
         }
-        JsonNode system = json.get("system");
         return new ChatRequest(
                 FormatSupport.requiredText(json, "model"),
-                system == null || system.isNull() ? null : readText(system),
+                systemTexts.isEmpty() ? null : String.join("\n\n", systemTexts),
                 messages,
                 readTools(json.path("tools")),
                 json.has("max_tokens") ? json.get("max_tokens").asInt() : null,

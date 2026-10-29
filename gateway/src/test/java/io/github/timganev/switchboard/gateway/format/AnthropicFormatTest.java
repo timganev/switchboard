@@ -116,13 +116,28 @@ class AnthropicFormatTest {
     }
 
     @Test
-    void shouldRejectSystemRoleInsideMessages() {
+    void shouldMoveSystemMessagesIntoSystemPrompt() {
         JsonNode json = jsonMapper.readTree("""
-                {"model": "claude", "messages": [{"role": "system", "content": "Be brief."}]}
+                {"model": "claude", "max_tokens": 100, "system": [{"type": "text", "text": "Be brief."}], "messages": [
+                  {"role": "user", "content": "Hi"},
+                  {"role": "system", "content": [{"type": "text", "text": "Today is Thursday.", "cache_control": {"type": "ephemeral"}}]}
+                ]}
+                """);
+
+        ChatRequest request = format.readRequest(json);
+
+        assertThat(request.system()).isEqualTo("Be brief.\n\nToday is Thursday.");
+        assertThat(request.messages()).containsExactly(new ChatMessage(Role.USER, List.of(new TextPart("Hi"))));
+    }
+
+    @Test
+    void shouldRejectUnknownRole() {
+        JsonNode json = jsonMapper.readTree("""
+                {"model": "claude", "messages": [{"role": "tool", "content": "12C"}]}
                 """);
 
         assertThatThrownBy(() -> format.readRequest(json))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Unsupported message role: system");
+                .hasMessage("Unsupported message role: tool");
     }
 }
