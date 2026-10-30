@@ -222,8 +222,18 @@ the table and the stream. No Node toolchain: the page is one template.
 
 ![The live view](docs/console.png)
 
+### Dead letters
+
 A record a consumer cannot process is retried twice and then parked on `<consumer>-dlq` (raw bytes if
-it could not even be read), so one bad record never blocks a partition.
+it could not even be read), so one bad record never blocks a partition. Once the cause is fixed (say
+OpenSearch is back), the ledger and the trace service each send what they parked through their own
+`<consumer>-redrive` topic, not the shared one, so no other consumer sees the record twice. A record
+that fails again goes through the same retries and is parked again with the new reason.
+
+```bash
+curl localhost:8083/v1/dead-letters                 # where each record came from and why it failed
+curl -X POST localhost:8083/v1/dead-letters/redrive # {"records": 2}
+```
 
 ## Leak Lab
 
@@ -328,7 +338,8 @@ curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
   - [x] Dead letter topics for consumers
   - [x] Trace: the call and its privacy decision merged into one masked document in OpenSearch
   - [x] Live view: every call with its route and reasons, pushed to the browser as it finishes
-  - [ ] Redrive endpoint for dead letters; reconciling the estimate with the provider's bill
+  - [x] Redrive endpoint for dead letters
+  - [ ] Reconciling the estimate with the provider's bill
 - [ ] **4. Leak Lab and the decision model slot:** leakage, quality, cost and latency per strategy
 - [ ] **5. Hardening:** `SKETCH`, lethal trifecta guard, Helm charts, system tests in Kubernetes, Allure reports
 

@@ -7,6 +7,7 @@ import io.github.timganev.switchboard.commons.Topics;
 import io.github.timganev.switchboard.commons.event.LlmCallCompleted;
 import io.github.timganev.switchboard.commons.event.PrivacyDecisionMade;
 import io.github.timganev.switchboard.commons.event.SensitivityReason;
+import io.github.timganev.switchboard.commons.kafka.DeadLetters;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -41,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -109,6 +111,22 @@ class TraceIntegrationTest {
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> mockMvc.perform(get("/v1/calls").param("team", "team-b"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].callId", contains(newer, older))));
+    }
+
+    @Test
+    void shouldRedriveBothKindsOfParkedEventIntoOneTrace() throws Exception {
+        String callId = UUID.randomUUID().toString();
+        // As if the trace had parked them while OpenSearch was down.
+        kafka.send(DeadLetters.topic("trace"), callId, new PrivacyDecisionMade(callId, null, Route.SURROGATE,
+                List.of(new SensitivityReason("IBAN", 1)), Map.of("detector", "1"), null, false, false, List.of(), Instant.now())).get();
+        kafka.send(DeadLetters.topic("trace"), "team-redriven", call(callId, "team-redriven", Instant.now())).get();
+
+        mockMvc.perform(post("/v1/dead-letters/redrive")).andExpect(status().isOk());
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> mockMvc.perform(get("/v1/calls/{id}", callId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.team").value("team-redriven"))
+                .andExpect(jsonPath("$.privacy.reasons[0].type").value("IBAN")));
     }
 
     @Test

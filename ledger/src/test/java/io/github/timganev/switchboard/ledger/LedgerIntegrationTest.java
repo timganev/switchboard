@@ -42,6 +42,10 @@ import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -145,6 +149,42 @@ class LedgerIntegrationTest {
         }
         assertThat(parked).filteredOn(record -> "poison".equals(record.key()))
                 .singleElement().satisfies(record -> assertThat(record.value()).isEqualTo("not an event"));
+    }
+
+    @Test
+    void shouldRedriveAParkedCallIntoTheLedger() throws Exception {
+        // As if the ledger had parked it while Postgres was down.
+        kafka.send(DeadLetters.topic("ledger"), "team-redriven", call("team-redriven", Locality.CLOUD, "unpriced-model", 1_000_000, 0)).get();
+        mockMvc.perform(get("/v1/dead-letters"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].key", hasItem("team-redriven")));
+
+        mockMvc.perform(post("/v1/dead-letters/redrive"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.records").isNumber());
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(jdbc.sql("SELECT COALESCE(SUM(cost_usd), 0) FROM llm_call WHERE team = 'team-redriven'").query(BigDecimal.class).single())
+                        .isEqualByComparingTo("3"));
+        mockMvc.perform(get("/v1/dead-letters")).andExpect(jsonPath("$[*].key", not(hasItem("team-redriven"))));
+    }
+
+    @Test
+    void shouldParkARedrivenRecordAgainWhenItStillFails() throws Exception {
+        try (KafkaProducer<String, String> producer = new KafkaProducer<>(Map.of(
+                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+                ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
+                ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class))) {
+            producer.send(new ProducerRecord<>(Topics.LLM_CALL_COMPLETED, "still-poison", "not an event"));
+        }
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> mockMvc.perform(get("/v1/dead-letters"))
+                .andExpect(jsonPath("$[?(@.key == 'still-poison')].topic").value(hasItem(Topics.LLM_CALL_COMPLETED)))
+                .andExpect(jsonPath("$[?(@.key == 'still-poison')].reason").value(hasItem(org.hamcrest.Matchers.notNullValue()))));
+
+        mockMvc.perform(post("/v1/dead-letters/redrive")).andExpect(status().isOk());
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> mockMvc.perform(get("/v1/dead-letters"))
+                .andExpect(jsonPath("$[?(@.key == 'still-poison')].topic").value(hasItem(DeadLetters.redriveTopic("ledger")))));
     }
 
     private static LlmCallCompleted call(String team, Locality locality, String model, long input, long output) {

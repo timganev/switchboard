@@ -19,7 +19,7 @@ class CallListener {
         this.budgetEvents = budgetEvents;
     }
 
-    @KafkaListener(topics = Topics.LLM_CALL_COMPLETED)
+    @KafkaListener(topics = {Topics.LLM_CALL_COMPLETED, LedgerConfiguration.REDRIVE_TOPIC})
     void completed(LlmCallCompleted call) {
         budgetEvents.publish(ledger.record(call));
     }

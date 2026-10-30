@@ -4,6 +4,7 @@ import io.github.timganev.switchboard.commons.Topics;
 import io.github.timganev.switchboard.commons.event.LlmCallCompleted;
 import io.github.timganev.switchboard.commons.event.PrivacyDecisionMade;
 import io.github.timganev.switchboard.trace.live.LiveFeed;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -33,5 +34,15 @@ class TraceListener {
     void privacyDecisionMade(PrivacyDecisionMade decision) {
         store.merge(decision.callId(), Map.of("callId", decision.callId(), "privacy", decision));
         liveFeed.decisionMade(decision.callId());
+    }
+
+    // Both kinds of event come back on one topic; the type header tells them apart.
+    @KafkaListener(topics = TraceConfiguration.REDRIVE_TOPIC)
+    void redriven(ConsumerRecord<String, Object> record) {
+        switch (record.value()) {
+            case LlmCallCompleted call -> callCompleted(call);
+            case PrivacyDecisionMade decision -> privacyDecisionMade(decision);
+            default -> throw new IllegalArgumentException("Not a trace event: " + record.value());
+        }
     }
 }
