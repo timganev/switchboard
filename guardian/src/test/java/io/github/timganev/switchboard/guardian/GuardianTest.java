@@ -14,8 +14,8 @@ import io.github.timganev.switchboard.commons.chat.Usage;
 import io.github.timganev.switchboard.commons.event.SensitivityReason;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.commons.privacy.Restoration;
+import io.github.timganev.switchboard.commons.privacy.SensitiveType;
 import io.github.timganev.switchboard.guardian.detect.Detector;
-import io.github.timganev.switchboard.guardian.detect.SensitiveType;
 import io.github.timganev.switchboard.guardian.surrogate.SurrogateFactory;
 import org.junit.jupiter.api.Test;
 
@@ -59,6 +59,19 @@ class GuardianTest {
     }
 
     @Test
+    void shouldHandTheGatewayTheSubstitutionsSoItCanRestoreAStream() {
+        ChatRequest request = request(List.of(user("EGN " + EGN)));
+
+        Inspection inspection = guardian.inspect(request);
+
+        assertThat(inspection.substitutions()).singleElement().satisfies(substitution -> {
+            assertThat(substitution.type()).isEqualTo(SensitiveType.EGN);
+            assertThat(substitution.value()).isEqualTo(EGN);
+            assertThat(text(inspection.request(), 0)).isEqualTo("EGN " + substitution.surrogate());
+        });
+    }
+
+    @Test
     void shouldGiveAValueTheSameSurrogateOnEveryTurnOfAConversation() {
         ChatMessage first = user("My EGN is " + EGN);
         ChatRequest turn1 = request(List.of(first));
@@ -79,6 +92,18 @@ class GuardianTest {
         Restoration restoration = guardian.restore(original, answer);
 
         assertThat(restoration.response().parts()).containsExactly(new TextPart("IBAN " + IBAN + " looks fine."));
+        assertThat(restoration.responseReasons()).isEmpty();
+    }
+
+    @Test
+    void shouldPutTheRealValueBackWhenTheModelRewroteTheSurrogate() {
+        ChatRequest original = request(List.of(user("Check EGN " + EGN)));
+        String surrogate = text(guardian.inspect(original).request(), 0).substring("Check EGN ".length());
+        String dashed = String.join("-", surrogate.split(""));
+
+        Restoration restoration = guardian.restore(original, answer("Digits: " + dashed));
+
+        assertThat(restoration.response().parts()).containsExactly(new TextPart("Digits: " + String.join("-", EGN.split(""))));
         assertThat(restoration.responseReasons()).isEmpty();
     }
 

@@ -90,7 +90,8 @@ class ChatController {
                 writer.fail("The model backend stopped answering");
             }
         };
-        return ok(streamed.inspection(), streamed.responseReasons()).contentType(MediaType.TEXT_EVENT_STREAM).body(body);
+        // The response scan needs the whole answer, so a live stream carries no findings header.
+        return ok(streamed.inspection(), List.of()).contentType(MediaType.TEXT_EVENT_STREAM).body(body);
     }
 
     private static ResponseEntity.BodyBuilder ok(Inspection inspection, List<SensitivityReason> responseReasons) {

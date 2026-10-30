@@ -1,7 +1,7 @@
 package io.github.timganev.switchboard.guardian.surrogate;
 
+import io.github.timganev.switchboard.commons.privacy.SensitiveType;
 import io.github.timganev.switchboard.guardian.detect.Checksums;
-import io.github.timganev.switchboard.guardian.detect.SensitiveType;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;

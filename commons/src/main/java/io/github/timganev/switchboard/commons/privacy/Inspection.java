@@ -8,10 +8,12 @@ import java.util.List;
 
 /**
  * The guardian's verdict; {@code request} is what may leave the gateway, and is null when the route is {@code BLOCK}.
+ * {@code substitutions} lets the gateway restore a streamed answer as it arrives; it is empty unless the route is {@code SURROGATE}.
  */
-public record Inspection(Route route, List<SensitivityReason> reasons, ChatRequest request) {
+public record Inspection(Route route, List<SensitivityReason> reasons, ChatRequest request, List<Substitution> substitutions) {
 
     public Inspection {
         reasons = List.copyOf(reasons);
+        substitutions = substitutions == null ? List.of() : List.copyOf(substitutions);
     }
 }

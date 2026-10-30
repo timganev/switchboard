@@ -8,18 +8,20 @@ import io.github.timganev.switchboard.commons.chat.TextPart;
 import io.github.timganev.switchboard.commons.event.SensitivityReason;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.commons.privacy.Restoration;
+import io.github.timganev.switchboard.commons.privacy.SensitiveType;
+import io.github.timganev.switchboard.commons.privacy.Substitution;
+import io.github.timganev.switchboard.commons.privacy.SurrogateRestorer;
 import io.github.timganev.switchboard.guardian.detect.Detector;
 import io.github.timganev.switchboard.guardian.detect.Finding;
-import io.github.timganev.switchboard.guardian.detect.SensitiveType;
 import io.github.timganev.switchboard.guardian.surrogate.Replacer;
 import io.github.timganev.switchboard.guardian.surrogate.SurrogateFactory;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -55,20 +57,22 @@ public class Guardian {
                 .map(entry -> new SensitivityReason(entry.getKey().name(), entry.getValue().size()))
                 .toList();
         return switch (route) {
-            case BLOCK -> new Inspection(route, reasons, null);
+            case BLOCK -> new Inspection(route, reasons, null, null);
             case SURROGATE -> {
-                Map<String, String> surrogates = surrogates(request, found);
-                yield new Inspection(route, reasons, ChatTexts.map(request, text -> Replacer.replace(text, surrogates)));
+                List<Substitution> substitutions = substitutions(request, found);
+                Map<String, String> surrogates = substitutions.stream()
+                        .collect(Collectors.toMap(Substitution::value, Substitution::surrogate));
+                ChatRequest surrogated = ChatTexts.map(request, text -> Replacer.replace(text, surrogates));
+                yield new Inspection(route, reasons, surrogated, substitutions);
             }
-            default -> new Inspection(route, reasons, request);
+            default -> new Inspection(route, reasons, request, null);
         };
     }
 
     public Restoration restore(ChatRequest original, ChatResponse response) {
         Map<SensitiveType, Set<String>> found = scan(ChatTexts.of(original));
-        Map<String, String> realBySurrogate = surrogates(original, found).entrySet().stream()
-                .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
-        ChatResponse restored = ChatTexts.map(response, text -> Replacer.replace(text, realBySurrogate));
+        SurrogateRestorer restorer = new SurrogateRestorer(substitutions(original, found));
+        ChatResponse restored = ChatTexts.map(response, restorer::restore);
 
         Set<String> known = found.values().stream().flatMap(Set::stream).collect(Collectors.toSet());
         Map<SensitiveType, Set<String>> produced = scan(ChatTexts.of(restored));
@@ -90,11 +94,11 @@ public class Guardian {
         return found;
     }
 
-    private Map<String, String> surrogates(ChatRequest request, Map<SensitiveType, Set<String>> found) {
+    private List<Substitution> substitutions(ChatRequest request, Map<SensitiveType, Set<String>> found) {
         byte[] key = surrogateFactory.key(secret, conversationContext(request));
         Set<String> realValues = found.values().stream().flatMap(Set::stream).collect(Collectors.toSet());
         Set<String> used = new HashSet<>();
-        Map<String, String> surrogates = new LinkedHashMap<>();
+        List<Substitution> substitutions = new ArrayList<>();
         found.forEach((type, values) -> {
             if (properties.policy().get(type) != Route.SURROGATE) {
                 return;
@@ -107,10 +111,10 @@ public class Guardian {
                     surrogate = surrogateFactory.surrogate(key, type, value, attempt++);
                 } while (realValues.contains(surrogate) || used.contains(surrogate));
                 used.add(surrogate);
-                surrogates.put(value, surrogate);
+                substitutions.add(new Substitution(type, value, surrogate));
             }
         });
-        return surrogates;
+        return substitutions;
     }
 
     // A key per conversation, so the provider cannot link the same value across conversations.

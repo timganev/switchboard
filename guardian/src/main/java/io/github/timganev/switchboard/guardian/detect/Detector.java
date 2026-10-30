@@ -1,5 +1,6 @@
 package io.github.timganev.switchboard.guardian.detect;
 
+import io.github.timganev.switchboard.commons.privacy.SensitiveType;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;

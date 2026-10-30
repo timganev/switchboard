@@ -1,4 +1,4 @@
-package io.github.timganev.switchboard.guardian.detect;
+package io.github.timganev.switchboard.commons.privacy;
 
 // Ordered by priority: when two findings overlap, the earlier type wins.
 public enum SensitiveType {

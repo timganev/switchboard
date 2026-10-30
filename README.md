@@ -136,8 +136,14 @@ surrogate is derived again.
 
 If the guardian does not answer, the gateway sends nothing (503). A `LOCAL` request only ever goes to
 instances marked local; when they all fail, the client gets an error, never a quiet trip to the cloud.
-A surrogate answer that is streamed is restored whole and then replayed as a stream, because a
-surrogate can be split across chunks.
+A streamed surrogate answer is restored as it arrives: the guardian hands the gateway the
+substitutions for this one request, and the gateway holds back only a short tail that could still be
+the start of a split surrogate. The response scan needs the whole answer, so only non-streamed answers
+carry `X-Switchboard-Response-Findings`.
+
+Models rewrite values: an EGN with dashes between the digits, an IBAN in lower case or without spaces,
+a phone number with `0` instead of `+359`. Restore finds a surrogate written with spaces, dots or
+dashes and in any letter case, and puts the real value back in the model's spacing.
 
 ### The in-flight board
 
@@ -258,8 +264,9 @@ curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
   - [x] Detectors with check digits, a route per type, surrogates that pass the same checks, restore without storage
   - [x] Fail closed: no verdict means nothing is sent; a local request never leaves the local instances
   - [x] The answer is scanned for sensitive data the model produced on its own (`X-Switchboard-Response-Findings`)
-  - [ ] Restore inside a live stream instead of replaying the whole answer
-  - [ ] Values the model rewrites, e.g. an IBAN with spaces added; high-entropy secrets without a known prefix
+  - [x] Restore inside a live stream, even when a surrogate is split across chunks
+  - [x] Surrogates the model rewrites: separators, letter case, another phone prefix
+  - [ ] High-entropy secrets without a known prefix
 - [ ] **3. Events:** ledger with budgets, trace, live view
 - [ ] **4. Leak Lab and the decision model slot:** leakage, quality, cost and latency per strategy
 - [ ] **5. Hardening:** `SKETCH`, lethal trifecta guard, Helm charts, system tests in Kubernetes, Allure reports

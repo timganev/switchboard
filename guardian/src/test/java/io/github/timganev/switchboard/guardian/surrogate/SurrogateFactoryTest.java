@@ -1,8 +1,8 @@
 package io.github.timganev.switchboard.guardian.surrogate;
 
+import io.github.timganev.switchboard.commons.privacy.SensitiveType;
 import io.github.timganev.switchboard.guardian.detect.Detector;
 import io.github.timganev.switchboard.guardian.detect.Finding;
-import io.github.timganev.switchboard.guardian.detect.SensitiveType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 

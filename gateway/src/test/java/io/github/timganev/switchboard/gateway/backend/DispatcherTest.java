@@ -100,7 +100,7 @@ class DispatcherTest {
 
     @Test
     void shouldHoldTheLeaseUntilTheStreamIsClosed() {
-        when(modelClient.openStream(any(), eq(REQUEST))).thenReturn(new ReplayModelStream(ANSWER));
+        when(modelClient.openStream(any(), eq(REQUEST))).thenReturn(mock(ModelStream.class));
 
         ModelStream stream = dispatcher.openStream(EnumSet.of(Locality.LOCAL), REQUEST);
         assertThat(board.delegate.count("local-1")).isEqualTo(1);

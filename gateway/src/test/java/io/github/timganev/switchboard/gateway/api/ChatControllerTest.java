@@ -48,7 +48,7 @@ class ChatControllerTest {
 
     private static final ChatResponse ANSWER = new ChatResponse("resp-1", "qwen36",
             List.of(new TextPart("Hello")), StopReason.END_TURN, new Usage(12, 2));
-    private static final Inspection CLOUD = new Inspection(Route.CLOUD, List.of(), null);
+    private static final Inspection CLOUD = new Inspection(Route.CLOUD, List.of(), null, null);
 
     @Autowired
     private MockMvc mockMvc;
@@ -198,7 +198,7 @@ class ChatControllerTest {
     @Test
     void shouldTellTheClientTheRouteAndTheReasons() throws Exception {
         Inspection surrogate = new Inspection(Route.SURROGATE,
-                List.of(new SensitivityReason("EGN", 1), new SensitivityReason("IBAN", 2)), null);
+                List.of(new SensitivityReason("EGN", 1), new SensitivityReason("IBAN", 2)), null, null);
         when(pipeline.send(any())).thenReturn(new ChatPipeline.Answer(surrogate, ANSWER, List.of(new SensitivityReason("EMAIL", 1))));
 
         MvcResult result = mockMvc.perform(post("/v1/chat/completions")
@@ -242,7 +242,7 @@ class ChatControllerTest {
     }
 
     private static ChatPipeline.Streamed streamed(ModelStream stream) {
-        return new ChatPipeline.Streamed(CLOUD, stream, List.of());
+        return new ChatPipeline.Streamed(CLOUD, stream);
     }
 
     private static ModelStream streamOf(StreamEvent... events) {

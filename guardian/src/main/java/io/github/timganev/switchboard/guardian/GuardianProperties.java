@@ -1,7 +1,7 @@
 package io.github.timganev.switchboard.guardian;
 
 import io.github.timganev.switchboard.commons.Route;
-import io.github.timganev.switchboard.guardian.detect.SensitiveType;
+import io.github.timganev.switchboard.commons.privacy.SensitiveType;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.EnumMap;

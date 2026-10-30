@@ -6,10 +6,11 @@ import io.github.timganev.switchboard.commons.chat.ChatResponse;
 import io.github.timganev.switchboard.commons.event.SensitivityReason;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.commons.privacy.Restoration;
+import io.github.timganev.switchboard.commons.privacy.SurrogateRestorer;
 import io.github.timganev.switchboard.gateway.backend.Dispatcher;
 import io.github.timganev.switchboard.gateway.backend.Locality;
 import io.github.timganev.switchboard.gateway.backend.ModelStream;
-import io.github.timganev.switchboard.gateway.backend.ReplayModelStream;
+import io.github.timganev.switchboard.gateway.backend.RestoringModelStream;
 import io.github.timganev.switchboard.gateway.guardian.GuardianClient;
 import io.github.timganev.switchboard.gateway.guardian.RequestBlockedException;
 import org.springframework.stereotype.Component;
@@ -38,12 +39,11 @@ class ChatPipeline {
 
     Streamed stream(ChatRequest request) {
         Inspection inspection = inspect(request);
+        ModelStream stream = dispatcher.openStream(allowedLocalities(inspection.route()), inspection.request());
         if (inspection.route() == Route.SURROGATE) {
-            // A surrogate can be split across chunks, so the answer is restored whole and then replayed as a stream.
-            Answer answer = send(request, inspection);
-            return new Streamed(inspection, new ReplayModelStream(answer.response()), answer.responseReasons());
+            stream = new RestoringModelStream(stream, new SurrogateRestorer(inspection.substitutions()));
         }
-        return new Streamed(inspection, dispatcher.openStream(allowedLocalities(inspection.route()), inspection.request()), List.of());
+        return new Streamed(inspection, stream);
     }
 
     static Set<Locality> allowedLocalities(Route route) {
@@ -74,6 +74,6 @@ class ChatPipeline {
     record Answer(Inspection inspection, ChatResponse response, List<SensitivityReason> responseReasons) {
     }
 
-    record Streamed(Inspection inspection, ModelStream stream, List<SensitivityReason> responseReasons) {
+    record Streamed(Inspection inspection, ModelStream stream) {
     }
 }
