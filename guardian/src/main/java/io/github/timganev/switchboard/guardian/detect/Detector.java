@@ -16,6 +16,9 @@ import java.util.regex.Pattern;
 @Component
 public class Detector {
 
+    // Goes into every privacy decision, so a change in the rules shows up next to the verdicts it changed.
+    public static final String VERSION = "1";
+
     private static final List<Rule> RULES = List.of(
             new Rule(SensitiveType.PRIVATE_KEY, "-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----", value -> true),
             new Rule(SensitiveType.JWT, "\\beyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", value -> true),

@@ -17,6 +17,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
@@ -40,6 +41,7 @@ class GuardianClientTest {
     @Test
     void shouldSendTheRequestWithTypedPartsAndReadTheVerdict() {
         guardian.expect(requestTo("http://guardian/v1/inspect"))
+                .andExpect(header("X-Switchboard-Call-Id", "call-1"))
                 .andExpect(jsonPath("$.messages[0].parts[0].type").value("text"))
                 .andRespond(withSuccess("""
                         {"route": "SURROGATE", "reasons": [{"type": "EGN", "count": 1}],
@@ -47,7 +49,7 @@ class GuardianClientTest {
                            {"role": "USER", "parts": [{"type": "text", "text": "EGN 8807143345"}]}]}}
                         """, MediaType.APPLICATION_JSON));
 
-        Inspection inspection = client.inspect(REQUEST);
+        Inspection inspection = client.inspect(REQUEST, "call-1", null);
 
         assertThat(inspection.route()).isEqualTo(Route.SURROGATE);
         assertThat(inspection.reasons()).containsExactly(new SensitivityReason("EGN", 1));
@@ -58,6 +60,6 @@ class GuardianClientTest {
     void shouldFailClosedWhenTheGuardianFails() {
         guardian.expect(requestTo("http://guardian/v1/inspect")).andRespond(withServerError());
 
-        assertThatThrownBy(() -> client.inspect(REQUEST)).isInstanceOf(GuardianUnavailableException.class);
+        assertThatThrownBy(() -> client.inspect(REQUEST, "call-1", null)).isInstanceOf(GuardianUnavailableException.class);
     }
 }

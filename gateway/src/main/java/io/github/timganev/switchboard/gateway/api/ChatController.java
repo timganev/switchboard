@@ -1,16 +1,22 @@
 package io.github.timganev.switchboard.gateway.api;
 
+import io.github.timganev.switchboard.commons.ClientFormat;
 import io.github.timganev.switchboard.commons.chat.ChatRequest;
+import io.github.timganev.switchboard.commons.chat.StreamEvent;
 import io.github.timganev.switchboard.commons.event.SensitivityReason;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.gateway.backend.ModelStream;
+import io.github.timganev.switchboard.gateway.events.CallEvents;
+import io.github.timganev.switchboard.gateway.events.CallRecord;
 import io.github.timganev.switchboard.gateway.format.AnthropicFormat;
 import io.github.timganev.switchboard.gateway.format.AnthropicStreamWriter;
 import io.github.timganev.switchboard.gateway.format.OpenAiFormat;
 import io.github.timganev.switchboard.gateway.format.OpenAiStreamWriter;
 import io.github.timganev.switchboard.gateway.format.StreamWriter;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,32 +45,39 @@ class ChatController {
     private final OpenAiFormat openAiFormat;
     private final AnthropicFormat anthropicFormat;
     private final JsonMapper jsonMapper;
+    private final CallEvents callEvents;
 
-    ChatController(ChatPipeline pipeline, OpenAiFormat openAiFormat, AnthropicFormat anthropicFormat, JsonMapper jsonMapper) {
+    ChatController(ChatPipeline pipeline, OpenAiFormat openAiFormat, AnthropicFormat anthropicFormat, JsonMapper jsonMapper,
+                   CallEvents callEvents) {
         this.pipeline = pipeline;
         this.openAiFormat = openAiFormat;
         this.anthropicFormat = anthropicFormat;
         this.jsonMapper = jsonMapper;
+        this.callEvents = callEvents;
     }
 
     @PostMapping("/chat/completions")
-    ResponseEntity<StreamingResponseBody> chatCompletions(@RequestBody JsonNode body) {
+    ResponseEntity<StreamingResponseBody> chatCompletions(@RequestBody JsonNode body, HttpServletRequest http) {
         ChatRequest request = openAiFormat.readRequest(body);
+        CallRecord call = callEvents.start(http, ClientFormat.OPENAI, request.model());
         if (isStreaming(body)) {
             boolean includeUsage = body.path("stream_options").path("include_usage").asBoolean(false);
-            return stream(request, out -> new OpenAiStreamWriter(out, jsonMapper, includeUsage));
+            return stream(call, request, out -> new OpenAiStreamWriter(out, jsonMapper, includeUsage));
         }
-        ChatPipeline.Answer answer = pipeline.send(request);
+        ChatPipeline.Answer answer = pipeline.send(call, request);
+        callEvents.completed(call, HttpStatus.OK.value());
         return json(answer, openAiFormat.writeResponse(answer.response()));
     }
 
     @PostMapping("/messages")
-    ResponseEntity<StreamingResponseBody> messages(@RequestBody JsonNode body) {
+    ResponseEntity<StreamingResponseBody> messages(@RequestBody JsonNode body, HttpServletRequest http) {
         ChatRequest request = anthropicFormat.readRequest(body);
+        CallRecord call = callEvents.start(http, ClientFormat.ANTHROPIC, request.model());
         if (isStreaming(body)) {
-            return stream(request, out -> new AnthropicStreamWriter(out, jsonMapper));
+            return stream(call, request, out -> new AnthropicStreamWriter(out, jsonMapper));
         }
-        ChatPipeline.Answer answer = pipeline.send(request);
+        ChatPipeline.Answer answer = pipeline.send(call, request);
+        callEvents.completed(call, HttpStatus.OK.value());
         return json(answer, anthropicFormat.writeResponse(answer.response()));
     }
 
@@ -78,15 +91,23 @@ class ChatController {
         return body.path("stream").asBoolean(false);
     }
 
-    private ResponseEntity<StreamingResponseBody> stream(ChatRequest request, Function<OutputStream, StreamWriter> writerFactory) {
-        ChatPipeline.Streamed streamed = pipeline.stream(request);
+    private ResponseEntity<StreamingResponseBody> stream(CallRecord call, ChatRequest request,
+                                                         Function<OutputStream, StreamWriter> writerFactory) {
+        ChatPipeline.Streamed streamed = pipeline.stream(call, request);
         ModelStream modelStream = streamed.stream();
         StreamingResponseBody body = out -> {
             StreamWriter writer = writerFactory.apply(out);
             try (modelStream) {
-                modelStream.forEach(writer::write);
+                modelStream.forEach(event -> {
+                    if (event instanceof StreamEvent.MessageFinished finished) {
+                        call.usage(finished.usage());
+                    }
+                    writer.write(event);
+                });
+                callEvents.completed(call, HttpStatus.OK.value());
             } catch (IOException | RuntimeException exception) {
                 log.warn("Stream broke: {}", exception.toString());
+                callEvents.completed(call, HttpStatus.BAD_GATEWAY.value());
                 writer.fail("The model backend stopped answering");
             }
         };

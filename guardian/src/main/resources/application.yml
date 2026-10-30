@@ -1,6 +1,13 @@
 spring:
   application:
     name: guardian
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        # Events are sent off the request path; this bounds how long a send waits for a missing broker.
+        max.block.ms: 2000
 
 server:
   port: 8081

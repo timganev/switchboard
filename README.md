@@ -177,6 +177,12 @@ route becomes `LOCAL`.
 The contracts live in [`commons`](commons/src/main/java/io/github/timganev/switchboard/commons).
 Privacy events carry the type and count of what was found, never the value.
 
+The gateway publishes one `llm-call-completed` for every call however it ends (answered, blocked,
+refused, failed), keyed by team; the guardian publishes one `privacy-decision-made` for every verdict,
+under the same call id (`X-Switchboard-Call-Id`). Events go out on a virtual thread, so a slow or
+missing broker never delays or fails a request. Until teams authenticate, the team comes from the
+`X-Switchboard-Team` header (`default` when absent) and the session from `X-Switchboard-Session`.
+
 ## Leak Lab
 
 A second model receives exactly what left the boundary and tries to recover what was hidden or to

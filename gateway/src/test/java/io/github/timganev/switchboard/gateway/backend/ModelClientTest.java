@@ -1,5 +1,6 @@
 package io.github.timganev.switchboard.gateway.backend;
 
+import io.github.timganev.switchboard.commons.Locality;
 import io.github.timganev.switchboard.commons.chat.ChatMessage;
 import io.github.timganev.switchboard.commons.chat.ChatRequest;
 import io.github.timganev.switchboard.commons.chat.ChatResponse;

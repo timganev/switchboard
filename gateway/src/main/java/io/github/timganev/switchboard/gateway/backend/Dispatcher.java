@@ -1,5 +1,6 @@
 package io.github.timganev.switchboard.gateway.backend;
 
+import io.github.timganev.switchboard.commons.Locality;
 import io.github.timganev.switchboard.commons.chat.ChatRequest;
 import io.github.timganev.switchboard.commons.chat.ChatResponse;
 import io.github.timganev.switchboard.gateway.board.InflightBoard;
@@ -37,7 +38,7 @@ public class Dispatcher {
         this.board = board;
     }
 
-    public ChatResponse send(Set<Locality> allowed, ChatRequest request) {
+    public Dispatched<ChatResponse> send(Set<Locality> allowed, ChatRequest request) {
         return dispatch(allowed, (backend, lease) -> {
             try (lease) {
                 return modelClient.send(backend, request);
@@ -45,7 +46,7 @@ public class Dispatcher {
         });
     }
 
-    public ModelStream openStream(Set<Locality> allowed, ChatRequest request) {
+    public Dispatched<ModelStream> openStream(Set<Locality> allowed, ChatRequest request) {
         return dispatch(allowed, (backend, lease) -> {
             try {
                 return new LeasedModelStream(modelClient.openStream(backend, request), lease);
@@ -56,7 +57,14 @@ public class Dispatcher {
         });
     }
 
-    private <T> T dispatch(Set<Locality> allowed, BiFunction<Backend, Lease, T> call) {
+    /**
+     * Tells whether any configured instance is in the allowed set.
+     */
+    public boolean serves(Set<Locality> allowed) {
+        return backends.stream().anyMatch(backend -> allowed.contains(backend.locality()));
+    }
+
+    private <T> Dispatched<T> dispatch(Set<Locality> allowed, BiFunction<Backend, Lease, T> call) {
         Map<String, Backend> candidates = new LinkedHashMap<>();
         backends.stream().filter(backend -> allowed.contains(backend.locality()))
                 .forEach(backend -> candidates.put(backend.name(), backend));
@@ -68,7 +76,7 @@ public class Dispatcher {
             Lease lease = board.acquire(List.copyOf(candidates.keySet()));
             Backend backend = candidates.remove(lease.instance());
             try {
-                return call.apply(backend, lease);
+                return new Dispatched<>(backend, call.apply(backend, lease));
             } catch (RestClientException exception) {
                 if (!isRetryable(exception)) {
                     throw exception;

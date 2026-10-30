@@ -1,5 +1,6 @@
 package io.github.timganev.switchboard.gateway.api;
 
+import io.github.timganev.switchboard.commons.Locality;
 import io.github.timganev.switchboard.commons.Route;
 import io.github.timganev.switchboard.commons.chat.ChatRequest;
 import io.github.timganev.switchboard.commons.chat.ChatResponse;
@@ -7,10 +8,11 @@ import io.github.timganev.switchboard.commons.event.SensitivityReason;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.commons.privacy.Restoration;
 import io.github.timganev.switchboard.commons.privacy.SurrogateRestorer;
+import io.github.timganev.switchboard.gateway.backend.Dispatched;
 import io.github.timganev.switchboard.gateway.backend.Dispatcher;
-import io.github.timganev.switchboard.gateway.backend.Locality;
 import io.github.timganev.switchboard.gateway.backend.ModelStream;
 import io.github.timganev.switchboard.gateway.backend.RestoringModelStream;
+import io.github.timganev.switchboard.gateway.events.CallRecord;
 import io.github.timganev.switchboard.gateway.guardian.GuardianClient;
 import io.github.timganev.switchboard.gateway.guardian.RequestBlockedException;
 import org.springframework.stereotype.Component;
@@ -33,13 +35,23 @@ class ChatPipeline {
         this.dispatcher = dispatcher;
     }
 
-    Answer send(ChatRequest request) {
-        return send(request, inspect(request));
+    Answer send(CallRecord call, ChatRequest request) {
+        Inspection inspection = inspect(call, request);
+        Dispatched<ChatResponse> dispatched = dispatcher.send(allowedLocalities(inspection.route()), inspection.request());
+        call.answeredBy(dispatched.backend());
+        call.usage(dispatched.result().usage());
+        if (inspection.route() != Route.SURROGATE) {
+            return new Answer(inspection, dispatched.result(), List.of());
+        }
+        Restoration restoration = guardianClient.restore(request, dispatched.result());
+        return new Answer(inspection, restoration.response(), restoration.responseReasons());
     }
 
-    Streamed stream(ChatRequest request) {
-        Inspection inspection = inspect(request);
-        ModelStream stream = dispatcher.openStream(allowedLocalities(inspection.route()), inspection.request());
+    Streamed stream(CallRecord call, ChatRequest request) {
+        Inspection inspection = inspect(call, request);
+        Dispatched<ModelStream> dispatched = dispatcher.openStream(allowedLocalities(inspection.route()), inspection.request());
+        call.answeredBy(dispatched.backend());
+        ModelStream stream = dispatched.result();
         if (inspection.route() == Route.SURROGATE) {
             stream = new RestoringModelStream(stream, new SurrogateRestorer(inspection.substitutions()));
         }
@@ -54,21 +66,13 @@ class ChatPipeline {
         };
     }
 
-    private Inspection inspect(ChatRequest request) {
-        Inspection inspection = guardianClient.inspect(request);
+    private Inspection inspect(CallRecord call, ChatRequest request) {
+        Inspection inspection = guardianClient.inspect(request, call.callId(), call.sessionId());
+        call.route(inspection.route());
         if (inspection.route() == Route.BLOCK) {
             throw new RequestBlockedException(inspection.reasons());
         }
         return inspection;
-    }
-
-    private Answer send(ChatRequest request, Inspection inspection) {
-        ChatResponse response = dispatcher.send(allowedLocalities(inspection.route()), inspection.request());
-        if (inspection.route() != Route.SURROGATE) {
-            return new Answer(inspection, response, List.of());
-        }
-        Restoration restoration = guardianClient.restore(request, response);
-        return new Answer(inspection, restoration.response(), restoration.responseReasons());
     }
 
     record Answer(Inspection inspection, ChatResponse response, List<SensitivityReason> responseReasons) {

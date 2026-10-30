@@ -2,6 +2,7 @@ package io.github.timganev.switchboard.gateway.api;
 
 import io.github.timganev.switchboard.commons.Route;
 import io.github.timganev.switchboard.gateway.backend.NoBackendAvailableException;
+import io.github.timganev.switchboard.gateway.events.CallEvents;
 import io.github.timganev.switchboard.gateway.guardian.GuardianUnavailableException;
 import io.github.timganev.switchboard.gateway.guardian.RequestBlockedException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,9 +25,11 @@ class ApiErrors {
     private static final Logger log = LoggerFactory.getLogger(ApiErrors.class);
 
     private final JsonMapper jsonMapper;
+    private final CallEvents callEvents;
 
-    ApiErrors(JsonMapper jsonMapper) {
+    ApiErrors(JsonMapper jsonMapper, CallEvents callEvents) {
         this.jsonMapper = jsonMapper;
+        this.callEvents = callEvents;
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -43,6 +46,7 @@ class ApiErrors {
 
     @ExceptionHandler(RequestBlockedException.class)
     ResponseEntity<ObjectNode> blocked(RequestBlockedException exception, HttpServletRequest request) {
+        callEvents.failed(request, HttpStatus.FORBIDDEN.value());
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .header(SwitchboardHeaders.ROUTE, SwitchboardHeaders.route(Route.BLOCK, exception.reasons()))
                 .body(body(request, "permission_error",
@@ -62,6 +66,7 @@ class ApiErrors {
     }
 
     private ResponseEntity<ObjectNode> error(HttpServletRequest request, HttpStatus status, String type, String message) {
+        callEvents.failed(request, status.value());
         return ResponseEntity.status(status).body(body(request, type, message));
     }
 

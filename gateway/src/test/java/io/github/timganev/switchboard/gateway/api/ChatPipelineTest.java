@@ -1,5 +1,7 @@
 package io.github.timganev.switchboard.gateway.api;
 
+import io.github.timganev.switchboard.commons.ClientFormat;
+import io.github.timganev.switchboard.commons.Locality;
 import io.github.timganev.switchboard.commons.Route;
 import io.github.timganev.switchboard.commons.chat.ChatMessage;
 import io.github.timganev.switchboard.commons.chat.ChatRequest;
@@ -14,9 +16,11 @@ import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.commons.privacy.Restoration;
 import io.github.timganev.switchboard.commons.privacy.SensitiveType;
 import io.github.timganev.switchboard.commons.privacy.Substitution;
+import io.github.timganev.switchboard.gateway.backend.Backend;
+import io.github.timganev.switchboard.gateway.backend.Dispatched;
 import io.github.timganev.switchboard.gateway.backend.Dispatcher;
-import io.github.timganev.switchboard.gateway.backend.Locality;
 import io.github.timganev.switchboard.gateway.backend.ModelStream;
+import io.github.timganev.switchboard.gateway.events.CallRecord;
 import io.github.timganev.switchboard.gateway.guardian.GuardianClient;
 import io.github.timganev.switchboard.gateway.guardian.RequestBlockedException;
 import org.junit.jupiter.api.Test;
@@ -40,55 +44,63 @@ class ChatPipelineTest {
     private static final ChatRequest ORIGINAL = request("Summarise the contract of EGN 7501020018");
     private static final ChatRequest SURROGATED = request("Summarise the contract of EGN 8807143345");
     private static final List<SensitivityReason> EGN = List.of(new SensitivityReason("EGN", 1));
+    private static final Backend LOCAL_BACKEND = new Backend("local-1", Locality.LOCAL, null, null);
+    private static final Backend CLOUD_BACKEND = new Backend("cloud-1", Locality.CLOUD, "big-model", null);
     private static final List<Substitution> SUBSTITUTIONS = List.of(new Substitution(SensitiveType.EGN, "7501020018", "8807143345"));
 
     private final GuardianClient guardianClient = mock(GuardianClient.class);
     private final Dispatcher dispatcher = mock(Dispatcher.class);
     private final ChatPipeline pipeline = new ChatPipeline(guardianClient, dispatcher);
+    private final CallRecord call = new CallRecord(null, "team-a", ClientFormat.OPENAI, "qwen36");
 
     @Test
     void shouldSendOnlySurrogatesOutAndRestoreTheAnswer() {
-        when(guardianClient.inspect(ORIGINAL)).thenReturn(new Inspection(Route.SURROGATE, EGN, SURROGATED, SUBSTITUTIONS));
-        when(dispatcher.send(EnumSet.allOf(Locality.class), SURROGATED)).thenReturn(answer("About 8807143345"));
+        when(guardianClient.inspect(ORIGINAL, call.callId(), null)).thenReturn(new Inspection(Route.SURROGATE, EGN, SURROGATED, SUBSTITUTIONS));
+        when(dispatcher.send(EnumSet.allOf(Locality.class), SURROGATED)).thenReturn(new Dispatched<>(CLOUD_BACKEND, answer("About 8807143345")));
         when(guardianClient.restore(ORIGINAL, answer("About 8807143345")))
                 .thenReturn(new Restoration(answer("About 7501020018"), List.of()));
 
-        ChatPipeline.Answer answer = pipeline.send(ORIGINAL);
+        ChatPipeline.Answer answer = pipeline.send(call, ORIGINAL);
 
         assertThat(answer.response()).isEqualTo(answer("About 7501020018"));
         assertThat(answer.inspection().route()).isEqualTo(Route.SURROGATE);
+        assertThat(call.route()).isEqualTo(Route.SURROGATE);
+        assertThat(call.backend()).isEqualTo(CLOUD_BACKEND);
+        assertThat(call.model()).isEqualTo("big-model");
+        assertThat(call.usage()).isEqualTo(new Usage(1, 1));
     }
 
     @Test
     void shouldKeepALocalRequestOnLocalInstancesWithoutRestoring() {
-        when(guardianClient.inspect(ORIGINAL)).thenReturn(new Inspection(Route.LOCAL, EGN, ORIGINAL, null));
-        when(dispatcher.send(EnumSet.of(Locality.LOCAL), ORIGINAL)).thenReturn(answer("Done"));
+        when(guardianClient.inspect(ORIGINAL, call.callId(), null)).thenReturn(new Inspection(Route.LOCAL, EGN, ORIGINAL, null));
+        when(dispatcher.send(EnumSet.of(Locality.LOCAL), ORIGINAL)).thenReturn(new Dispatched<>(LOCAL_BACKEND, answer("Done")));
 
-        pipeline.send(ORIGINAL);
+        pipeline.send(call, ORIGINAL);
 
         verify(guardianClient, never()).restore(any(), any());
     }
 
     @Test
     void shouldNotSendABlockedRequestAnywhere() {
-        when(guardianClient.inspect(ORIGINAL)).thenReturn(
+        when(guardianClient.inspect(ORIGINAL, call.callId(), null)).thenReturn(
                 new Inspection(Route.BLOCK, List.of(new SensitivityReason("PRIVATE_KEY", 1)), null, null));
 
-        assertThatThrownBy(() -> pipeline.send(ORIGINAL)).isInstanceOf(RequestBlockedException.class);
+        assertThatThrownBy(() -> pipeline.send(call, ORIGINAL)).isInstanceOf(RequestBlockedException.class);
+        assertThat(call.route()).isEqualTo(Route.BLOCK);
         verify(dispatcher, never()).send(any(), any());
     }
 
     @Test
     void shouldRestoreAStreamedAnswerAsItArrivesEvenWhenASurrogateIsSplit() throws Exception {
-        when(guardianClient.inspect(ORIGINAL)).thenReturn(new Inspection(Route.SURROGATE, EGN, SURROGATED, SUBSTITUTIONS));
-        when(dispatcher.openStream(EnumSet.allOf(Locality.class), SURROGATED)).thenReturn(streamOf(
+        when(guardianClient.inspect(ORIGINAL, call.callId(), null)).thenReturn(new Inspection(Route.SURROGATE, EGN, SURROGATED, SUBSTITUTIONS));
+        when(dispatcher.openStream(EnumSet.allOf(Locality.class), SURROGATED)).thenReturn(new Dispatched<>(CLOUD_BACKEND, streamOf(
                 new StreamEvent.MessageStarted("r1", "qwen36"),
                 new StreamEvent.TextDelta("About 8807"),
                 new StreamEvent.TextDelta("14-3345, fine."),
-                new StreamEvent.MessageFinished(StopReason.END_TURN, new Usage(1, 1))));
+                new StreamEvent.MessageFinished(StopReason.END_TURN, new Usage(1, 1)))));
         List<StreamEvent> events = new ArrayList<>();
 
-        pipeline.stream(ORIGINAL).stream().forEach(events::add);
+        pipeline.stream(call, ORIGINAL).stream().forEach(events::add);
 
         String text = events.stream()
                 .filter(StreamEvent.TextDelta.class::isInstance)

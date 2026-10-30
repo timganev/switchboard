@@ -1,5 +1,6 @@
 package io.github.timganev.switchboard.gateway.backend;
 
+import io.github.timganev.switchboard.commons.Locality;
 import io.github.timganev.switchboard.commons.chat.ChatMessage;
 import io.github.timganev.switchboard.commons.chat.ChatRequest;
 import io.github.timganev.switchboard.commons.chat.ChatResponse;
@@ -64,7 +65,10 @@ class DispatcherTest {
                 HttpStatus.TOO_MANY_REQUESTS, "busy", null, null, null));
         when(modelClient.send(local2, REQUEST)).thenReturn(ANSWER);
 
-        assertThat(dispatcher.send(EnumSet.of(Locality.LOCAL), REQUEST)).isEqualTo(ANSWER);
+        Dispatched<ChatResponse> dispatched = dispatcher.send(EnumSet.of(Locality.LOCAL), REQUEST);
+
+        assertThat(dispatched.result()).isEqualTo(ANSWER);
+        assertThat(dispatched.backend()).isEqualTo(local2);
         assertThat(board.offered).containsExactly(List.of("local-1", "local-2"), List.of("local-2"));
         assertThat(board.delegate.count("local-1")).isZero();
         assertThat(board.delegate.count("local-2")).isZero();
@@ -102,7 +106,7 @@ class DispatcherTest {
     void shouldHoldTheLeaseUntilTheStreamIsClosed() {
         when(modelClient.openStream(any(), eq(REQUEST))).thenReturn(mock(ModelStream.class));
 
-        ModelStream stream = dispatcher.openStream(EnumSet.of(Locality.LOCAL), REQUEST);
+        ModelStream stream = dispatcher.openStream(EnumSet.of(Locality.LOCAL), REQUEST).result();
         assertThat(board.delegate.count("local-1")).isEqualTo(1);
 
         stream.close();

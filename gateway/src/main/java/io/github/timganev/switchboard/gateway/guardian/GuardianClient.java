@@ -1,14 +1,18 @@
 package io.github.timganev.switchboard.gateway.guardian;
 
+import io.github.timganev.switchboard.commons.CallHeaders;
 import io.github.timganev.switchboard.commons.chat.ChatRequest;
 import io.github.timganev.switchboard.commons.chat.ChatResponse;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.commons.privacy.Restoration;
 import io.github.timganev.switchboard.commons.privacy.RestoreRequest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+
+import java.util.function.Consumer;
 
 /**
  * Asks the guardian for a verdict before a request leaves, and for the real values when the answer comes back.
@@ -22,19 +26,26 @@ public class GuardianClient {
         this.guardianRestClient = guardianRestClient;
     }
 
-    public Inspection inspect(ChatRequest request) {
-        return call("/v1/inspect", request, Inspection.class);
+    public Inspection inspect(ChatRequest request, String callId, String sessionId) {
+        return call("/v1/inspect", request, Inspection.class, headers -> {
+            headers.set(CallHeaders.CALL_ID, callId);
+            if (sessionId != null) {
+                headers.set(CallHeaders.SESSION, sessionId);
+            }
+        });
     }
 
     public Restoration restore(ChatRequest original, ChatResponse response) {
-        return call("/v1/restore", new RestoreRequest(original, response), Restoration.class);
+        return call("/v1/restore", new RestoreRequest(original, response), Restoration.class, headers -> {
+        });
     }
 
-    private <T> T call(String path, Object body, Class<T> answerType) {
+    private <T> T call(String path, Object body, Class<T> answerType, Consumer<HttpHeaders> headers) {
         T answer;
         try {
             answer = guardianRestClient.post()
                     .uri(path)
+                    .headers(headers)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()

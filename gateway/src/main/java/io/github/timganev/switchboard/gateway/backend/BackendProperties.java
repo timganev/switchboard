@@ -1,5 +1,6 @@
 package io.github.timganev.switchboard.gateway.backend;
 
+import io.github.timganev.switchboard.commons.Locality;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.net.URI;
