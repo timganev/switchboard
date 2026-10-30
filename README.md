@@ -6,8 +6,8 @@ Every company now wants its teams to use the strongest cloud models without send
 must not leave. Switchboard is the single door all LLM traffic goes through. For every request it
 decides where the request may go, sends it there, and records why.
 
-> **Status:** skeleton. Every service starts and reports health; the logic is built stage by stage
-> (see [Roadmap](#roadmap)).
+> **Status:** the gateway and the guardian work: both APIs, streaming, the in-flight board, surrogates
+> and restore. The other services are still skeletons (see [Roadmap](#roadmap)).
 
 ## Principles
 
@@ -87,12 +87,12 @@ decides where the request may go, sends it there, and records why.
 
 ## The hot path
 
-Example: an agent sends a contract with a national ID and an IBAN and asks for a risk summary.
+Example: an agent sends a contract with a Bulgarian national ID (EGN) and an IBAN and asks for a risk summary.
 
 ```
 client ──► gateway: authenticate, translate into the internal format
               │
-              ├──► guardian /inspect ── verdict: SURROGATE, reason: NATIONAL_ID, IBAN
+              ├──► guardian /inspect ── verdict: SURROGATE, reason: EGN, IBAN
               │    (decision model slot: optional, local only, can only tighten)
               │
               ├── dispatcher inside the gateway (no network hop):
@@ -103,13 +103,16 @@ client ──► gateway: authenticate, translate into the internal format
               │
               ├──► guardian /restore ── real values back, the answer is scanned
               │
-client ◄──────┘    header: X-Switchboard-Route: surrogate; reason=NATIONAL_ID,IBAN
+client ◄──────┘    header: X-Switchboard-Route: surrogate; reason=IBAN,EGN
               │
               └──► Kafka: llm-call-completed  (asynchronous, off the client's path)
 ```
 
 The guardian scans every part of the request: system prompt, messages, tool arguments and tool
-results. It returns one of five verdicts:
+results, and tool definitions. Patterns find candidates and check digits confirm them: EGN and LNCH
+(Bulgarian personal and foreigner IDs), IBAN (mod 97), payment cards (Luhn), email addresses, Bulgarian
+phone numbers, API keys by their known prefixes, JWTs and private keys. Each type maps to a route, and
+the strictest route among the findings wins. It returns one of five verdicts:
 
 | Verdict | What happens |
 |---|---|
@@ -121,12 +124,20 @@ results. It returns one of five verdicts:
 
 ### A vault that does not exist
 
-Surrogates are deterministic: `HMAC(session key, real value)` becomes a fake but valid-looking value.
+Surrogates are deterministic: `HMAC(conversation key, real value)` becomes a fake value of the same
+type that still passes its check digits, so the model reasons about it as it would about the real one.
 Chat APIs resend the whole history on every turn, so the guardian sees the real values again and turns
-them into the same surrogates. The reverse mapping is needed only within one request, so it lives in
-memory and nothing sensitive is stored at rest. For the same reason sensitivity sticks to a session
-without being remembered: the sensitive value is still in the history. The session key is per
-conversation, so a provider cannot link the same value across conversations.
+them into the same surrogates. To restore an answer, the gateway sends the original request along and
+the guardian rebuilds the mapping, so nothing is stored, not even between the two calls. For the same
+reason sensitivity sticks to a conversation without being remembered: the value is still in the
+history. The key is derived from the conversation's first message, so a provider cannot link the same
+value across conversations. A surrogate that would collide with a real value or with another
+surrogate is derived again.
+
+If the guardian does not answer, the gateway sends nothing (503). A `LOCAL` request only ever goes to
+instances marked local; when they all fail, the client gets an error, never a quiet trip to the cloud.
+A surrogate answer that is streamed is restored whole and then replayed as a stream, because a
+surrogate can be split across chunks.
 
 ### The in-flight board
 
@@ -215,6 +226,7 @@ an optional `api-key`, an optional `model` that replaces the client's model name
 ```bash
 ./mvnw -B package -DskipTests
 java -jar mock-llm/target/mock-llm-0.1.0-SNAPSHOT.jar &
+SWITCHBOARD_GUARDIAN_SECRET=a-long-random-secret-of-32-chars-or-more java -jar guardian/target/guardian-0.1.0-SNAPSHOT.jar &
 java -jar gateway/target/gateway-0.1.0-SNAPSHOT.jar &
 
 curl localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
@@ -225,6 +237,12 @@ curl localhost:8080/v1/messages -H 'Content-Type: application/json' \
 
 curl -N localhost:8080/v1/messages -H 'Content-Type: application/json' \
   -d '{"model": "qwen36", "max_tokens": 100, "stream": true, "messages": [{"role": "user", "content": "Hi"}]}'
+
+# The verdict and its reasons come back in a header; the guardian shows what would leave
+curl -i localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model": "qwen36", "messages": [{"role": "user", "content": "Risks for EGN 7501020018?"}]}'
+curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
+  -d '{"model": "qwen36", "messages": [{"role": "USER", "parts": [{"type": "text", "text": "Risks for EGN 7501020018?"}]}]}'
 ```
 
 ## Roadmap
@@ -237,6 +255,11 @@ curl -N localhost:8080/v1/messages -H 'Content-Type: application/json' \
   - [x] The in-flight board across local instances and a cloud provider, with retry inside the allowed set
   - [ ] Images and other multimodal content
 - [ ] **2. Guardian:** deterministic detectors, deterministic surrogates and restore, fail-closed local route
+  - [x] Detectors with check digits, a route per type, surrogates that pass the same checks, restore without storage
+  - [x] Fail closed: no verdict means nothing is sent; a local request never leaves the local instances
+  - [x] The answer is scanned for sensitive data the model produced on its own (`X-Switchboard-Response-Findings`)
+  - [ ] Restore inside a live stream instead of replaying the whole answer
+  - [ ] Values the model rewrites, e.g. an IBAN with spaces added; high-entropy secrets without a known prefix
 - [ ] **3. Events:** ledger with budgets, trace, live view
 - [ ] **4. Leak Lab and the decision model slot:** leakage, quality, cost and latency per strategy
 - [ ] **5. Hardening:** `SKETCH`, lethal trifecta guard, Helm charts, system tests in Kubernetes, Allure reports

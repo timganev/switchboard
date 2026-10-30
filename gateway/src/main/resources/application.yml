@@ -26,6 +26,9 @@ switchboard:
     type: local
     # Matches the longest request, so a lease left by a crashed replica expires soon after.
     lease-ttl: 10m
+  guardian:
+    url: http://localhost:8081
+    timeout: 5s
   backend:
     connect-timeout: 5s
     read-timeout: 120s

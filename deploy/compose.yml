@@ -51,6 +51,7 @@ services:
         MODULE: gateway
     environment:
       SWITCHBOARD_BACKEND_INSTANCES_0_URL: http://mock-llm:8090/v1
+      SWITCHBOARD_GUARDIAN_URL: http://guardian:8081
       SWITCHBOARD_BOARD_TYPE: redis
       SPRING_DATA_REDIS_HOST: redis
     ports:
@@ -62,6 +63,9 @@ services:
       <<: *build
       args:
         MODULE: guardian
+    environment:
+      # A demo value; set your own outside of local runs.
+      SWITCHBOARD_GUARDIAN_SECRET: ${SWITCHBOARD_GUARDIAN_SECRET:-local-demo-secret-change-me-0123456789}
     ports:
       - "8081:8081"
 

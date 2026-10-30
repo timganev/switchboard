@@ -4,3 +4,9 @@ spring:
 
 server:
   port: 8081
+
+switchboard:
+  guardian:
+    # The surrogate secret comes from SWITCHBOARD_GUARDIAN_SECRET; the guardian does not start without it.
+    policy:
+      PRIVATE_KEY: BLOCK

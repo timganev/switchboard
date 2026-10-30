@@ -1,6 +1,9 @@
 package io.github.timganev.switchboard.gateway.api;
 
+import io.github.timganev.switchboard.commons.Route;
 import io.github.timganev.switchboard.gateway.backend.NoBackendAvailableException;
+import io.github.timganev.switchboard.gateway.guardian.GuardianUnavailableException;
+import io.github.timganev.switchboard.gateway.guardian.RequestBlockedException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,18 +41,37 @@ class ApiErrors {
         return error(request, HttpStatus.BAD_GATEWAY, "api_error", "The model backend failed to answer");
     }
 
+    @ExceptionHandler(RequestBlockedException.class)
+    ResponseEntity<ObjectNode> blocked(RequestBlockedException exception, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .header(SwitchboardHeaders.ROUTE, SwitchboardHeaders.route(Route.BLOCK, exception.reasons()))
+                .body(body(request, "permission_error",
+                        "The request was blocked because it contains " + SwitchboardHeaders.types(exception.reasons())));
+    }
+
+    @ExceptionHandler(GuardianUnavailableException.class)
+    ResponseEntity<ObjectNode> guardianUnavailable(GuardianUnavailableException exception, HttpServletRequest request) {
+        log.warn("Guardian call failed: {}", exception.getCause().toString());
+        return error(request, HttpStatus.SERVICE_UNAVAILABLE, "api_error",
+                "The privacy guardian is unavailable, so the request was not sent");
+    }
+
     @ExceptionHandler(NoBackendAvailableException.class)
     ResponseEntity<ObjectNode> noBackend(NoBackendAvailableException exception, HttpServletRequest request) {
         return error(request, HttpStatus.SERVICE_UNAVAILABLE, "api_error", exception.getMessage());
     }
 
     private ResponseEntity<ObjectNode> error(HttpServletRequest request, HttpStatus status, String type, String message) {
+        return ResponseEntity.status(status).body(body(request, type, message));
+    }
+
+    private ObjectNode body(HttpServletRequest request, String type, String message) {
         ObjectNode body = jsonMapper.createObjectNode();
         if (request.getRequestURI().endsWith("/messages")) {
             body.put("type", "error").putObject("error").put("type", type).put("message", message);
         } else {
             body.putObject("error").put("type", type).put("message", message);
         }
-        return ResponseEntity.status(status).body(body);
+        return body;
     }
 }

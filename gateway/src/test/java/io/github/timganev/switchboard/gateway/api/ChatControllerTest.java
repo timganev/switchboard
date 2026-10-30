@@ -8,9 +8,12 @@ import io.github.timganev.switchboard.commons.chat.StopReason;
 import io.github.timganev.switchboard.commons.chat.StreamEvent;
 import io.github.timganev.switchboard.commons.chat.TextPart;
 import io.github.timganev.switchboard.commons.chat.Usage;
-import io.github.timganev.switchboard.gateway.backend.Dispatcher;
-import io.github.timganev.switchboard.gateway.backend.Locality;
+import io.github.timganev.switchboard.commons.Route;
+import io.github.timganev.switchboard.commons.event.SensitivityReason;
+import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.gateway.backend.ModelStream;
+import io.github.timganev.switchboard.gateway.guardian.GuardianUnavailableException;
+import io.github.timganev.switchboard.gateway.guardian.RequestBlockedException;
 import io.github.timganev.switchboard.gateway.format.AnthropicFormat;
 import io.github.timganev.switchboard.gateway.format.OpenAiFormat;
 import org.junit.jupiter.api.Test;
@@ -24,7 +27,6 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.io.IOException;
-import java.util.EnumSet;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
@@ -35,6 +37,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -45,16 +48,17 @@ class ChatControllerTest {
 
     private static final ChatResponse ANSWER = new ChatResponse("resp-1", "qwen36",
             List.of(new TextPart("Hello")), StopReason.END_TURN, new Usage(12, 2));
+    private static final Inspection CLOUD = new Inspection(Route.CLOUD, List.of(), null);
 
     @Autowired
     private MockMvc mockMvc;
 
     @MockitoBean
-    private Dispatcher dispatcher;
+    private ChatPipeline pipeline;
 
     @Test
     void shouldAnswerOpenAiRequestInOpenAiFormat() throws Exception {
-        when(dispatcher.send(any(), any())).thenReturn(ANSWER);
+        when(pipeline.send(any())).thenReturn(new ChatPipeline.Answer(CLOUD, ANSWER, List.of()));
 
         MvcResult result = mockMvc.perform(post("/v1/chat/completions")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -72,7 +76,7 @@ class ChatControllerTest {
 
     @Test
     void shouldAnswerAnthropicRequestInAnthropicFormat() throws Exception {
-        when(dispatcher.send(any(), any())).thenReturn(ANSWER);
+        when(pipeline.send(any())).thenReturn(new ChatPipeline.Answer(CLOUD, ANSWER, List.of()));
 
         MvcResult result = mockMvc.perform(post("/v1/messages")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -88,16 +92,16 @@ class ChatControllerTest {
                 .andExpect(jsonPath("$.content[0].text").value("Hello"))
                 .andExpect(jsonPath("$.stop_reason").value("end_turn"));
 
-        verify(dispatcher).send(EnumSet.allOf(Locality.class), new ChatRequest("qwen36", "Be brief.",
+        verify(pipeline).send(new ChatRequest("qwen36", "Be brief.",
                 List.of(new ChatMessage(Role.USER, List.of(new TextPart("Hi")))), null, 100, null));
     }
 
     @Test
     void shouldStreamAnthropicEvents() throws Exception {
-        when(dispatcher.openStream(any(), any())).thenReturn(streamOf(
+        when(pipeline.stream(any())).thenReturn(streamed(streamOf(
                 new StreamEvent.MessageStarted("resp-1", "qwen36"),
                 new StreamEvent.TextDelta("Hello"),
-                new StreamEvent.MessageFinished(StopReason.END_TURN, new Usage(12, 2))));
+                new StreamEvent.MessageFinished(StopReason.END_TURN, new Usage(12, 2)))));
 
         MvcResult result = mockMvc.perform(post("/v1/messages")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -117,10 +121,10 @@ class ChatControllerTest {
 
     @Test
     void shouldStreamOpenAiChunksWithUsageWhenRequested() throws Exception {
-        when(dispatcher.openStream(any(), any())).thenReturn(streamOf(
+        when(pipeline.stream(any())).thenReturn(streamed(streamOf(
                 new StreamEvent.MessageStarted("resp-1", "qwen36"),
                 new StreamEvent.TextDelta("Hello"),
-                new StreamEvent.MessageFinished(StopReason.END_TURN, new Usage(12, 2))));
+                new StreamEvent.MessageFinished(StopReason.END_TURN, new Usage(12, 2)))));
 
         MvcResult result = mockMvc.perform(post("/v1/chat/completions")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -140,7 +144,7 @@ class ChatControllerTest {
 
     @Test
     void shouldEndAnthropicStreamWithErrorEventWhenBackendBreaks() throws Exception {
-        when(dispatcher.openStream(any(), any())).thenReturn(new ModelStream() {
+        when(pipeline.stream(any())).thenReturn(streamed(new ModelStream() {
             @Override
             public void forEach(EventConsumer consumer) throws IOException {
                 consumer.accept(new StreamEvent.MessageStarted("resp-1", "qwen36"));
@@ -150,7 +154,7 @@ class ChatControllerTest {
             @Override
             public void close() {
             }
-        });
+        }));
 
         MvcResult result = mockMvc.perform(post("/v1/messages")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -166,7 +170,7 @@ class ChatControllerTest {
 
     @Test
     void shouldReturnBadGatewayBeforeStreamingWhenBackendRejectsTheRequest() throws Exception {
-        when(dispatcher.openStream(any(), any())).thenThrow(new ResourceAccessException("Connection refused"));
+        when(pipeline.stream(any())).thenThrow(new ResourceAccessException("Connection refused"));
 
         mockMvc.perform(post("/v1/chat/completions")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -179,7 +183,7 @@ class ChatControllerTest {
 
     @Test
     void shouldReturnBadGatewayWithAnthropicErrorWhenBackendIsUnreachable() throws Exception {
-        when(dispatcher.send(any(), any())).thenThrow(new ResourceAccessException("Connection refused"));
+        when(pipeline.send(any())).thenThrow(new ResourceAccessException("Connection refused"));
 
         mockMvc.perform(post("/v1/messages")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -189,6 +193,56 @@ class ChatControllerTest {
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.type").value("error"))
                 .andExpect(jsonPath("$.error.type").value("api_error"));
+    }
+
+    @Test
+    void shouldTellTheClientTheRouteAndTheReasons() throws Exception {
+        Inspection surrogate = new Inspection(Route.SURROGATE,
+                List.of(new SensitivityReason("EGN", 1), new SensitivityReason("IBAN", 2)), null);
+        when(pipeline.send(any())).thenReturn(new ChatPipeline.Answer(surrogate, ANSWER, List.of(new SensitivityReason("EMAIL", 1))));
+
+        MvcResult result = mockMvc.perform(post("/v1/chat/completions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"model": "qwen36", "messages": [{"role": "user", "content": "Hi"}]}
+                                """))
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(result))
+                .andExpect(header().string("X-Switchboard-Route", "surrogate; reason=EGN,IBAN"))
+                .andExpect(header().string("X-Switchboard-Response-Findings", "EMAIL"));
+    }
+
+    @Test
+    void shouldRefuseABlockedRequestAndSayWhy() throws Exception {
+        when(pipeline.send(any())).thenThrow(new RequestBlockedException(List.of(new SensitivityReason("PRIVATE_KEY", 1))));
+
+        mockMvc.perform(post("/v1/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"model": "qwen36", "max_tokens": 100, "messages": [{"role": "user", "content": "Hi"}]}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(header().string("X-Switchboard-Route", "block; reason=PRIVATE_KEY"))
+                .andExpect(jsonPath("$.error.type").value("permission_error"))
+                .andExpect(jsonPath("$.error.message").value("The request was blocked because it contains PRIVATE_KEY"));
+    }
+
+    @Test
+    void shouldFailClosedWhenTheGuardianIsUnavailable() throws Exception {
+        when(pipeline.send(any())).thenThrow(new GuardianUnavailableException(new ResourceAccessException("Connection refused")));
+
+        mockMvc.perform(post("/v1/chat/completions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"model": "qwen36", "messages": [{"role": "user", "content": "Hi"}]}
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error.message").value("The privacy guardian is unavailable, so the request was not sent"));
+    }
+
+    private static ChatPipeline.Streamed streamed(ModelStream stream) {
+        return new ChatPipeline.Streamed(CLOUD, stream, List.of());
     }
 
     private static ModelStream streamOf(StreamEvent... events) {
