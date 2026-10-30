@@ -1,6 +1,23 @@
 spring:
   application:
     name: trace
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: trace
+      auto-offset-reset: earliest
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        spring.json.trusted.packages: io.github.timganev.switchboard.commons.event
+    producer:
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
 
 server:
   port: 8083
+
+switchboard:
+  trace:
+    opensearch:
+      url: http://localhost:9200
+      timeout: 5s

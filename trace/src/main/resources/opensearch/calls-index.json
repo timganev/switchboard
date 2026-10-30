@@ -1,0 +1,35 @@
+{
+  "mappings": {
+    "properties": {
+      "callId": { "type": "keyword" },
+      "sessionId": { "type": "keyword" },
+      "team": { "type": "keyword" },
+      "clientFormat": { "type": "keyword" },
+      "route": { "type": "keyword" },
+      "locality": { "type": "keyword" },
+      "instance": { "type": "keyword" },
+      "model": { "type": "keyword" },
+      "inputTokens": { "type": "long" },
+      "outputTokens": { "type": "long" },
+      "cacheReadTokens": { "type": "long" },
+      "latencyMs": { "type": "long" },
+      "httpStatus": { "type": "integer" },
+      "timestamp": { "type": "date" },
+      "privacy": {
+        "properties": {
+          "verdict": { "type": "keyword" },
+          "reasons": {
+            "properties": {
+              "type": { "type": "keyword" },
+              "count": { "type": "integer" }
+            }
+          },
+          "escalatedByModel": { "type": "boolean" },
+          "trifectaTriggered": { "type": "boolean" },
+          "removedTools": { "type": "keyword" },
+          "timestamp": { "type": "date" }
+        }
+      }
+    }
+  }
+}

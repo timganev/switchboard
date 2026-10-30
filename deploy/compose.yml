@@ -36,6 +36,18 @@ services:
     ports:
       - "9092:9092"
 
+  opensearch:
+    image: opensearchproject/opensearch:3.8.0
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+      # A single local node: a nearly full disk must not stop it from creating the index.
+      cluster.routing.allocation.disk.threshold_enabled: "false"
+    ports:
+      - "9200:9200"
+
   mock-llm:
     <<: *service
     build:
@@ -91,6 +103,9 @@ services:
       <<: *build
       args:
         MODULE: trace
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SWITCHBOARD_TRACE_OPENSEARCH_URL: http://opensearch:9200
     ports:
       - "8083:8083"
 

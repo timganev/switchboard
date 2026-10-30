@@ -6,8 +6,9 @@ Every company now wants its teams to use the strongest cloud models without send
 must not leave. Switchboard is the single door all LLM traffic goes through. For every request it
 decides where the request may go, sends it there, and records why.
 
-> **Status:** the gateway and the guardian work: both APIs, streaming, the in-flight board, surrogates
-> and restore. The other services are still skeletons (see [Roadmap](#roadmap)).
+> **Status:** the gateway, the guardian, the ledger and the trace work: both APIs, streaming, the
+> in-flight board, surrogates and restore, events, budgets and masked traces. The live view and Leak Lab
+> are next (see [Roadmap](#roadmap)).
 
 ## Principles
 
@@ -200,6 +201,17 @@ curl -X PUT localhost:8082/v1/budgets/payments -H 'Content-Type: application/jso
 curl localhost:8082/v1/budgets/payments
 ```
 
+### Traces
+
+The trace service merges both events of a call into one OpenSearch document: route, instance,
+tokens, latency, status, and the guardian's verdict with the types and counts it found. Nothing in it
+is a sensitive value, because nothing in the events is.
+
+```bash
+curl 'localhost:8083/v1/calls?team=payments&limit=20'   # newest first
+curl localhost:8083/v1/calls/<call id>
+```
+
 A record a consumer cannot process is retried twice and then parked on `<consumer>-dlq` (raw bytes if
 it could not even be read), so one bad record never blocks a partition.
 
@@ -262,6 +274,10 @@ an optional `api-key`, an optional `model` that replaces the client's model name
 java -jar mock-llm/target/mock-llm-0.1.0-SNAPSHOT.jar &
 SWITCHBOARD_GUARDIAN_SECRET=a-long-random-secret-of-32-chars-or-more java -jar guardian/target/guardian-0.1.0-SNAPSHOT.jar &
 java -jar gateway/target/gateway-0.1.0-SNAPSHOT.jar &
+# Optional: events, budgets and traces need Kafka, Postgres and OpenSearch
+docker compose -f deploy/compose.yml up -d kafka postgres opensearch
+java -jar ledger/target/ledger-0.1.0-SNAPSHOT.jar &
+java -jar trace/target/trace-0.1.0-SNAPSHOT.jar &
 
 curl localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
   -d '{"model": "qwen36", "messages": [{"role": "user", "content": "Hi"}]}'
@@ -300,6 +316,8 @@ curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
   - [x] Ledger: versioned prices, idempotent spend per team in Postgres, budget states on a compacted topic
   - [x] Gateway: a team over its budget is kept on local models, or refused with the reason
   - [x] Dead letter topics for consumers
+  - [x] Trace: the call and its privacy decision merged into one masked document in OpenSearch
+  - [ ] Live view
   - [ ] Redrive endpoint for dead letters; reconciling the estimate with the provider's bill
 - [ ] **4. Leak Lab and the decision model slot:** leakage, quality, cost and latency per strategy
 - [ ] **5. Hardening:** `SKETCH`, lethal trifecta guard, Helm charts, system tests in Kubernetes, Allure reports
