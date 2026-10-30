@@ -10,6 +10,7 @@ import io.github.timganev.switchboard.commons.event.SensitivityReason;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -22,12 +23,21 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -35,7 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
 @Testcontainers
 class TraceIntegrationTest {
@@ -66,6 +76,9 @@ class TraceIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @LocalServerPort
+    private int port;
 
     @Test
     void shouldMergeTheCallAndThePrivacyDecisionIntoOneTrace() {
@@ -102,6 +115,48 @@ class TraceIntegrationTest {
     void shouldAnswerNotFoundForAnUnknownCall() throws Exception {
         mockMvc.perform(get("/v1/calls/{id}", "unknown")).andExpect(status().isNotFound());
         mockMvc.perform(get("/v1/calls").param("team", "nobody")).andExpect(status().isOk()).andExpect(content().json("[]"));
+    }
+
+    @Test
+    void shouldPushAFinishedCallToAnOpenConsole() throws Exception {
+        String callId = UUID.randomUUID().toString();
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<Stream<String>> stream = client.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live/stream?team=team-live")).timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofLines());
+        BlockingQueue<String> lines = new LinkedBlockingQueue<>();
+        Thread.ofVirtual().start(() -> stream.body().forEach(lines::add));
+
+        kafka.send(Topics.PRIVACY_DECISION_MADE, callId, new PrivacyDecisionMade(callId, null, Route.SURROGATE,
+                List.of(new SensitivityReason("EGN", 1)), Map.of("detector", "1"), null, false, false, List.of(), Instant.now()));
+        kafka.send(Topics.LLM_CALL_COMPLETED, "team-other", call(UUID.randomUUID().toString(), "team-other", Instant.now()));
+        kafka.send(Topics.LLM_CALL_COMPLETED, "team-live", call(callId, "team-live", Instant.now()));
+
+        // Reads until the blank line that ends the event carrying this call.
+        StringBuilder received = new StringBuilder();
+        boolean seen = false;
+        long deadline = System.currentTimeMillis() + 30_000;
+        while (System.currentTimeMillis() < deadline) {
+            String line = lines.poll(500, TimeUnit.MILLISECONDS);
+            if (line == null) {
+                continue;
+            }
+            received.append(line).append('\n');
+            seen |= line.contains("call-" + callId);
+            if (seen && line.isEmpty()) {
+                break;
+            }
+        }
+        stream.body().close();
+        client.shutdownNow();
+
+        assertThat(received.toString())
+                .contains("event:call", "hx-swap-oob=\"afterbegin:#calls\"", "call-" + callId, "surrogate", "EGN")
+                .doesNotContain("team-other");
+        // Search sees a new document only after OpenSearch refreshes the index, about a second later.
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> mockMvc.perform(get("/").param("team", "team-live"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("call-" + callId))));
     }
 
     private static LlmCallCompleted call(String callId, String team, Instant at) {

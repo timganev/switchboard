@@ -1,0 +1,15 @@
+<!-- One console row; the page renders it, and the live feed pushes it. -->
+<table xmlns:th="http://www.thymeleaf.org">
+<tr th:fragment="row(call, fresh)" th:id="'call-' + ${call.callId}" th:classappend="${fresh} ? 'fresh'"
+    th:attrappend="hx-swap-oob=${change == 'updated'} ? 'true'">
+    <td th:text="${call.time}"></td>
+    <td th:text="${call.team}"></td>
+    <td><span class="route" th:classappend="${call.route}" th:text="${call.route}"></span></td>
+    <td th:text="${call.reasons}" th:classappend="${call.reasons.isEmpty()} ? 'muted'"></td>
+    <td th:text="${call.where}"></td>
+    <td class="muted" th:text="${call.model}"></td>
+    <td class="num" th:text="${call.inputTokens} + ' / ' + ${call.outputTokens}"></td>
+    <td class="num" th:text="${call.latencyMs} + ' ms'"></td>
+    <td class="num" th:classappend="${call.status >= 400} ? 'failed'" th:text="${call.status}"></td>
+</tr>
+</table>

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Switchboard live</title>
+    <script src="https://unpkg.com/htmx.org@2.0.11/dist/htmx.min.js"></script>
+    <script src="https://unpkg.com/htmx-ext-sse@2.2.4/dist/sse.js"></script>
+    <style>
+        :root {
+            --bg: #f7f7f5; --surface: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e4e3df;
+            --cloud: #2f6fb3; --surrogate: #a86400; --local: #2e7d4f; --block: #b3261e;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #161615; --surface: #1f1f1d; --text: #ecebe6; --muted: #9a9993; --line: #33332f;
+                --cloud: #7fb0e6; --surrogate: #e3a54f; --local: #74c294; --block: #f08a82;
+            }
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--text);
+               font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+        main { max-width: 1200px; margin: 0 auto; }
+        header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 24px; margin-bottom: 16px; }
+        h1 { font-size: 20px; margin: 0; }
+        .live { color: var(--local); font-size: 13px; }
+        .live::before { content: "●"; margin-right: 6px; }
+        form { margin-left: auto; display: flex; gap: 8px; }
+        input, button { font: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px;
+                        background: var(--surface); color: var(--text); }
+        .table { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+        th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+        td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        tr:last-child td { border-bottom: 0; }
+        .route { font-weight: 600; }
+        .route.cloud { color: var(--cloud); }
+        .route.surrogate { color: var(--surrogate); }
+        .route.local, .route.sketch { color: var(--local); }
+        .route.block { color: var(--block); }
+        .failed { color: var(--block); font-weight: 600; }
+        .muted { color: var(--muted); }
+        tr.fresh td { animation: fresh 2s ease-out; }
+        @keyframes fresh { from { background: color-mix(in srgb, var(--surrogate) 18%, transparent); } }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <h1>Switchboard live</h1>
+        <span class="live">every call, its route and why</span>
+        <form method="get" action="/">
+            <input name="team" placeholder="team" th:value="${team}">
+            <button type="submit">Filter</button>
+        </form>
+    </header>
+    <div class="table">
+        <table>
+            <thead>
+            <tr>
+                <th>Time (UTC)</th><th>Team</th><th>Route</th><th>Reasons</th><th>Instance</th><th>Model</th>
+                <th class="num">Tokens in / out</th><th class="num">Latency</th><th class="num">Status</th>
+            </tr>
+            </thead>
+            <tbody id="calls">
+            <th:block th:each="call : ${calls}">
+                <tr th:replace="~{call-row :: row(${call}, false)}"></tr>
+            </th:block>
+            </tbody>
+        </table>
+    </div>
+    <div hx-ext="sse" th:attr="sse-connect=${team} == null ? '/live/stream' : '/live/stream?team=' + ${#uris.escapeQueryParam(team)}" sse-swap="call" hx-swap="none"></div>
+</main>
+
+<th:block th:fragment="change">
+    <tbody th:if="${change == 'added'}" hx-swap-oob="afterbegin:#calls">
+    <tr th:replace="~{call-row :: row(${call}, true)}"></tr>
+    </tbody>
+    <th:block th:if="${change == 'updated'}">
+        <tr th:replace="~{call-row :: row(${call}, false)}"></tr>
+    </th:block>
+</th:block>
+
+</body>
+</html>

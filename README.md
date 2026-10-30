@@ -7,8 +7,8 @@ must not leave. Switchboard is the single door all LLM traffic goes through. For
 decides where the request may go, sends it there, and records why.
 
 > **Status:** the gateway, the guardian, the ledger and the trace work: both APIs, streaming, the
-> in-flight board, surrogates and restore, events, budgets and masked traces. The live view and Leak Lab
-> are next (see [Roadmap](#roadmap)).
+> in-flight board, surrogates and restore, events, budgets, masked traces and the live view. Leak Lab
+> is next (see [Roadmap](#roadmap)).
 
 ## Principles
 
@@ -212,6 +212,16 @@ curl 'localhost:8083/v1/calls?team=payments&limit=20'   # newest first
 curl localhost:8083/v1/calls/<call id>
 ```
 
+### Live view
+
+The trace service also serves the console at `localhost:8083`: the latest 50 calls rendered on the
+server (Thymeleaf), then each new call pushed over server-sent events as an HTML row that htmx puts at
+the top of the table. A row is pushed once the call has finished and is replaced when the guardian's
+decision arrives later, so it is complete whichever event came first. `?team=payments` narrows both
+the table and the stream. No Node toolchain: the page is one template.
+
+![The live view](docs/console.png)
+
 A record a consumer cannot process is retried twice and then parked on `<consumer>-dlq` (raw bytes if
 it could not even be read), so one bad record never blocks a partition.
 
@@ -317,15 +327,12 @@ curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
   - [x] Gateway: a team over its budget is kept on local models, or refused with the reason
   - [x] Dead letter topics for consumers
   - [x] Trace: the call and its privacy decision merged into one masked document in OpenSearch
-  - [ ] Live view
+  - [x] Live view: every call with its route and reasons, pushed to the browser as it finishes
   - [ ] Redrive endpoint for dead letters; reconciling the estimate with the provider's bill
 - [ ] **4. Leak Lab and the decision model slot:** leakage, quality, cost and latency per strategy
 - [ ] **5. Hardening:** `SKETCH`, lethal trifecta guard, Helm charts, system tests in Kubernetes, Allure reports
 
 **To decide**
-- [ ] **Live view UI (stage 3).** Options: Thymeleaf + htmx + server-sent events served by Spring
-      (stays in Java, no Node toolchain), React + Vite (stronger full stack signal, second toolchain),
-      or Grafana dashboards (little code, but shows numbers rather than per-request reasons).
 - [ ] **Adaptive limits on top of the board.** The board counts requests, but the safe limit per
       instance is configured by hand. An AIMD controller (like TCP congestion control) could learn it
       from latency, 429 and 503, and also notice load that does not come through Switchboard. The learned
