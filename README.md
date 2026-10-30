@@ -206,8 +206,11 @@ The system tests read each service's base URL from an environment variable, for 
 
 ### Try it without Docker
 
-The gateway already speaks both APIs and forwards to any OpenAI-compatible backend
-(`switchboard.backend.url`, default `http://localhost:8090/v1`, the fake provider).
+The gateway forwards to the OpenAI-compatible instances listed under `switchboard.backend.instances`
+(by default one local instance: the fake provider on port 8090). Each instance has a `name`, a `url`,
+an optional `api-key`, an optional `model` that replaces the client's model name, and a `locality`
+(`LOCAL` or `CLOUD`; unset counts as cloud). Without Redis each gateway counts its own requests; set
+`switchboard.board.type=redis` to share the board.
 
 ```bash
 ./mvnw -B package -DskipTests
@@ -231,7 +234,7 @@ curl -N localhost:8080/v1/messages -H 'Content-Type: application/json' \
   - [x] OpenAI and Anthropic formats through one internal model: text, system prompt, tool calls and results
   - [x] Both APIs forward to an OpenAI-compatible backend, with timeouts and errors in the caller's format
   - [x] Streaming in both formats; a backend error before the first byte is still a clean 502
-  - [ ] The in-flight board across local instances and a cloud provider
+  - [x] The in-flight board across local instances and a cloud provider, with retry inside the allowed set
   - [ ] Images and other multimodal content
 - [ ] **2. Guardian:** deterministic detectors, deterministic surrogates and restore, fail-closed local route
 - [ ] **3. Events:** ledger with budgets, trace, live view

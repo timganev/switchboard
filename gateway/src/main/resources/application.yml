@@ -5,12 +5,31 @@ spring:
     async:
       # Streamed answers from slow local models can run for minutes.
       request-timeout: 10m
+  data:
+    redis:
+      host: localhost
+      timeout: 500ms
+      connect-timeout: 500ms
 
 server:
   port: 8080
 
+management:
+  health:
+    redis:
+      # The board falls back to counting locally, so Redis being down does not make the gateway unhealthy.
+      enabled: false
+
 switchboard:
+  board:
+    # local: each replica counts its own requests; redis: all replicas share one board
+    type: local
+    # Matches the longest request, so a lease left by a crashed replica expires soon after.
+    lease-ttl: 10m
   backend:
-    url: http://localhost:8090/v1
     connect-timeout: 5s
     read-timeout: 120s
+    instances:
+      - name: mock
+        url: http://localhost:8090/v1
+        locality: LOCAL

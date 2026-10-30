@@ -1,7 +1,8 @@
 package io.github.timganev.switchboard.gateway.api;
 
 import io.github.timganev.switchboard.commons.chat.ChatRequest;
-import io.github.timganev.switchboard.gateway.backend.ModelClient;
+import io.github.timganev.switchboard.gateway.backend.Dispatcher;
+import io.github.timganev.switchboard.gateway.backend.Locality;
 import io.github.timganev.switchboard.gateway.backend.ModelStream;
 import io.github.timganev.switchboard.gateway.format.AnthropicFormat;
 import io.github.timganev.switchboard.gateway.format.AnthropicStreamWriter;
@@ -22,6 +23,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.EnumSet;
 import java.util.function.Function;
 
 /**
@@ -33,13 +35,13 @@ class ChatController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatController.class);
 
-    private final ModelClient modelClient;
+    private final Dispatcher dispatcher;
     private final OpenAiFormat openAiFormat;
     private final AnthropicFormat anthropicFormat;
     private final JsonMapper jsonMapper;
 
-    ChatController(ModelClient modelClient, OpenAiFormat openAiFormat, AnthropicFormat anthropicFormat, JsonMapper jsonMapper) {
-        this.modelClient = modelClient;
+    ChatController(Dispatcher dispatcher, OpenAiFormat openAiFormat, AnthropicFormat anthropicFormat, JsonMapper jsonMapper) {
+        this.dispatcher = dispatcher;
         this.openAiFormat = openAiFormat;
         this.anthropicFormat = anthropicFormat;
         this.jsonMapper = jsonMapper;
@@ -52,7 +54,7 @@ class ChatController {
             boolean includeUsage = body.path("stream_options").path("include_usage").asBoolean(false);
             return stream(request, out -> new OpenAiStreamWriter(out, jsonMapper, includeUsage));
         }
-        return json(openAiFormat.writeResponse(modelClient.send(request)));
+        return json(openAiFormat.writeResponse(dispatcher.send(EnumSet.allOf(Locality.class), request)));
     }
 
     @PostMapping("/messages")
@@ -61,7 +63,7 @@ class ChatController {
         if (isStreaming(body)) {
             return stream(request, out -> new AnthropicStreamWriter(out, jsonMapper));
         }
-        return json(anthropicFormat.writeResponse(modelClient.send(request)));
+        return json(anthropicFormat.writeResponse(dispatcher.send(EnumSet.allOf(Locality.class), request)));
     }
 
     // Spring picks the return value handler by the declared type, so plain JSON answers are written as a body too.
@@ -75,7 +77,7 @@ class ChatController {
     }
 
     private ResponseEntity<StreamingResponseBody> stream(ChatRequest request, Function<OutputStream, StreamWriter> writerFactory) {
-        ModelStream modelStream = modelClient.openStream(request);
+        ModelStream modelStream = dispatcher.openStream(EnumSet.allOf(Locality.class), request);
         StreamingResponseBody body = out -> {
             StreamWriter writer = writerFactory.apply(out);
             try (modelStream) {

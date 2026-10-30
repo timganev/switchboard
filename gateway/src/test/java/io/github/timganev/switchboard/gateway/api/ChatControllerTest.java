@@ -8,7 +8,8 @@ import io.github.timganev.switchboard.commons.chat.StopReason;
 import io.github.timganev.switchboard.commons.chat.StreamEvent;
 import io.github.timganev.switchboard.commons.chat.TextPart;
 import io.github.timganev.switchboard.commons.chat.Usage;
-import io.github.timganev.switchboard.gateway.backend.ModelClient;
+import io.github.timganev.switchboard.gateway.backend.Dispatcher;
+import io.github.timganev.switchboard.gateway.backend.Locality;
 import io.github.timganev.switchboard.gateway.backend.ModelStream;
 import io.github.timganev.switchboard.gateway.format.AnthropicFormat;
 import io.github.timganev.switchboard.gateway.format.OpenAiFormat;
@@ -23,6 +24,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.io.IOException;
+import java.util.EnumSet;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
@@ -48,11 +50,11 @@ class ChatControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private ModelClient modelClient;
+    private Dispatcher dispatcher;
 
     @Test
     void shouldAnswerOpenAiRequestInOpenAiFormat() throws Exception {
-        when(modelClient.send(any())).thenReturn(ANSWER);
+        when(dispatcher.send(any(), any())).thenReturn(ANSWER);
 
         MvcResult result = mockMvc.perform(post("/v1/chat/completions")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -70,7 +72,7 @@ class ChatControllerTest {
 
     @Test
     void shouldAnswerAnthropicRequestInAnthropicFormat() throws Exception {
-        when(modelClient.send(any())).thenReturn(ANSWER);
+        when(dispatcher.send(any(), any())).thenReturn(ANSWER);
 
         MvcResult result = mockMvc.perform(post("/v1/messages")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -86,13 +88,13 @@ class ChatControllerTest {
                 .andExpect(jsonPath("$.content[0].text").value("Hello"))
                 .andExpect(jsonPath("$.stop_reason").value("end_turn"));
 
-        verify(modelClient).send(new ChatRequest("qwen36", "Be brief.",
+        verify(dispatcher).send(EnumSet.allOf(Locality.class), new ChatRequest("qwen36", "Be brief.",
                 List.of(new ChatMessage(Role.USER, List.of(new TextPart("Hi")))), null, 100, null));
     }
 
     @Test
     void shouldStreamAnthropicEvents() throws Exception {
-        when(modelClient.openStream(any())).thenReturn(streamOf(
+        when(dispatcher.openStream(any(), any())).thenReturn(streamOf(
                 new StreamEvent.MessageStarted("resp-1", "qwen36"),
                 new StreamEvent.TextDelta("Hello"),
                 new StreamEvent.MessageFinished(StopReason.END_TURN, new Usage(12, 2))));
@@ -115,7 +117,7 @@ class ChatControllerTest {
 
     @Test
     void shouldStreamOpenAiChunksWithUsageWhenRequested() throws Exception {
-        when(modelClient.openStream(any())).thenReturn(streamOf(
+        when(dispatcher.openStream(any(), any())).thenReturn(streamOf(
                 new StreamEvent.MessageStarted("resp-1", "qwen36"),
                 new StreamEvent.TextDelta("Hello"),
                 new StreamEvent.MessageFinished(StopReason.END_TURN, new Usage(12, 2))));
@@ -138,7 +140,7 @@ class ChatControllerTest {
 
     @Test
     void shouldEndAnthropicStreamWithErrorEventWhenBackendBreaks() throws Exception {
-        when(modelClient.openStream(any())).thenReturn(new ModelStream() {
+        when(dispatcher.openStream(any(), any())).thenReturn(new ModelStream() {
             @Override
             public void forEach(EventConsumer consumer) throws IOException {
                 consumer.accept(new StreamEvent.MessageStarted("resp-1", "qwen36"));
@@ -164,7 +166,7 @@ class ChatControllerTest {
 
     @Test
     void shouldReturnBadGatewayBeforeStreamingWhenBackendRejectsTheRequest() throws Exception {
-        when(modelClient.openStream(any())).thenThrow(new ResourceAccessException("Connection refused"));
+        when(dispatcher.openStream(any(), any())).thenThrow(new ResourceAccessException("Connection refused"));
 
         mockMvc.perform(post("/v1/chat/completions")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -177,7 +179,7 @@ class ChatControllerTest {
 
     @Test
     void shouldReturnBadGatewayWithAnthropicErrorWhenBackendIsUnreachable() throws Exception {
-        when(modelClient.send(any())).thenThrow(new ResourceAccessException("Connection refused"));
+        when(dispatcher.send(any(), any())).thenThrow(new ResourceAccessException("Connection refused"));
 
         mockMvc.perform(post("/v1/messages")
                         .contentType(MediaType.APPLICATION_JSON)

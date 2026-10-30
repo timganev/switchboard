@@ -16,26 +16,24 @@ import tools.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Sends a chat request to the OpenAI-compatible backend.
+ * Sends a chat request to one OpenAI-compatible model instance.
  */
 @Component
 public class ModelClient {
 
-    private final RestClient backendRestClient;
     private final OpenAiFormat openAiFormat;
     private final JsonMapper jsonMapper;
 
-    public ModelClient(RestClient backendRestClient, OpenAiFormat openAiFormat, JsonMapper jsonMapper) {
-        this.backendRestClient = backendRestClient;
+    public ModelClient(OpenAiFormat openAiFormat, JsonMapper jsonMapper) {
         this.openAiFormat = openAiFormat;
         this.jsonMapper = jsonMapper;
     }
 
-    public ChatResponse send(ChatRequest request) {
-        JsonNode response = backendRestClient.post()
+    public ChatResponse send(Backend backend, ChatRequest request) {
+        JsonNode response = backend.restClient().post()
                 .uri("/chat/completions")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(openAiFormat.writeRequest(request))
+                .body(openAiFormat.writeRequest(forBackend(backend, request)))
                 .retrieve()
                 .body(JsonNode.class);
         return openAiFormat.readResponse(response);
@@ -44,11 +42,11 @@ public class ModelClient {
     /**
      * Opens a streamed answer; a backend error surfaces here, before anything is sent to the client.
      */
-    public ModelStream openStream(ChatRequest request) {
-        ObjectNode body = openAiFormat.writeRequest(request);
+    public ModelStream openStream(Backend backend, ChatRequest request) {
+        ObjectNode body = openAiFormat.writeRequest(forBackend(backend, request));
         body.put("stream", true);
         body.putObject("stream_options").put("include_usage", true);
-        ClientHttpResponse response = backendRestClient.post()
+        ClientHttpResponse response = backend.restClient().post()
                 .uri("/chat/completions")
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_EVENT_STREAM)
@@ -68,5 +66,13 @@ public class ModelClient {
                     return clientResponse;
                 }, false);
         return new SseModelStream(response, new OpenAiStreamReader(jsonMapper));
+    }
+
+    private static ChatRequest forBackend(Backend backend, ChatRequest request) {
+        if (backend.model() == null) {
+            return request;
+        }
+        return new ChatRequest(backend.model(), request.system(), request.messages(), request.tools(),
+                request.maxTokens(), request.temperature());
     }
 }

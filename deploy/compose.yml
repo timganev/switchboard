@@ -50,7 +50,9 @@ services:
       args:
         MODULE: gateway
     environment:
-      SWITCHBOARD_BACKEND_URL: http://mock-llm:8090/v1
+      SWITCHBOARD_BACKEND_INSTANCES_0_URL: http://mock-llm:8090/v1
+      SWITCHBOARD_BOARD_TYPE: redis
+      SPRING_DATA_REDIS_HOST: redis
     ports:
       - "8080:8080"
 

@@ -1,5 +1,6 @@
 package io.github.timganev.switchboard.gateway.api;
 
+import io.github.timganev.switchboard.gateway.backend.NoBackendAvailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +36,11 @@ class ApiErrors {
         Throwable cause = exception.getMostSpecificCause();
         log.warn("Backend call failed: {}: {}", cause.getClass().getSimpleName(), cause.getMessage());
         return error(request, HttpStatus.BAD_GATEWAY, "api_error", "The model backend failed to answer");
+    }
+
+    @ExceptionHandler(NoBackendAvailableException.class)
+    ResponseEntity<ObjectNode> noBackend(NoBackendAvailableException exception, HttpServletRequest request) {
+        return error(request, HttpStatus.SERVICE_UNAVAILABLE, "api_error", exception.getMessage());
     }
 
     private ResponseEntity<ObjectNode> error(HttpServletRequest request, HttpStatus status, String type, String message) {

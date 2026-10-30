@@ -38,14 +38,16 @@ class ModelClientTest {
             List.of(new ChatMessage(Role.USER, List.of(new TextPart("Hi")))), null, null, null);
 
     private MockRestServiceServer backend;
+    private Backend instance;
     private ModelClient modelClient;
 
     @BeforeEach
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://backend/v1");
         backend = MockRestServiceServer.bindTo(builder).build();
+        instance = new Backend("local-1", Locality.LOCAL, null, builder.build());
         JsonMapper jsonMapper = new JsonMapper();
-        modelClient = new ModelClient(builder.build(), new OpenAiFormat(jsonMapper), jsonMapper);
+        modelClient = new ModelClient(new OpenAiFormat(jsonMapper), jsonMapper);
     }
 
     @Test
@@ -61,7 +63,7 @@ class ModelClientTest {
                          "usage": {"prompt_tokens": 12, "completion_tokens": 2}}
                         """, MediaType.APPLICATION_JSON));
 
-        ChatResponse response = modelClient.send(REQUEST);
+        ChatResponse response = modelClient.send(instance, REQUEST);
 
         assertThat(response).isEqualTo(new ChatResponse("chatcmpl-1", "qwen36",
                 List.of(new TextPart("Hello")), StopReason.END_TURN, new Usage(12, 2)));
@@ -69,10 +71,27 @@ class ModelClientTest {
     }
 
     @Test
+    void shouldReplaceTheModelNameWhenTheInstanceNamesOne() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://cloud/v1");
+        MockRestServiceServer cloud = MockRestServiceServer.bindTo(builder).build();
+        cloud.expect(requestTo("http://cloud/v1/chat/completions"))
+                .andExpect(jsonPath("$.model").value("claude-sonnet-5-5"))
+                .andRespond(withSuccess("""
+                        {"id": "c1", "model": "claude-sonnet-5-5",
+                         "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "Hello"}}],
+                         "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+                        """, MediaType.APPLICATION_JSON));
+
+        modelClient.send(new Backend("cloud", Locality.CLOUD, "claude-sonnet-5-5", builder.build()), REQUEST);
+
+        cloud.verify();
+    }
+
+    @Test
     void shouldFailWhenBackendReturnsServerError() {
         backend.expect(requestTo("http://backend/v1/chat/completions")).andRespond(withServerError());
 
-        assertThatThrownBy(() -> modelClient.send(REQUEST)).isInstanceOf(HttpServerErrorException.class);
+        assertThatThrownBy(() -> modelClient.send(instance, REQUEST)).isInstanceOf(HttpServerErrorException.class);
     }
 
     @Test
@@ -90,7 +109,7 @@ class ModelClientTest {
                         """, MediaType.TEXT_EVENT_STREAM));
         List<StreamEvent> events = new ArrayList<>();
 
-        try (ModelStream stream = modelClient.openStream(REQUEST)) {
+        try (ModelStream stream = modelClient.openStream(instance, REQUEST)) {
             stream.forEach(events::add);
         }
 
@@ -105,7 +124,7 @@ class ModelClientTest {
         backend.expect(requestTo("http://backend/v1/chat/completions"))
                 .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).body("slow down"));
 
-        assertThatThrownBy(() -> modelClient.openStream(REQUEST))
+        assertThatThrownBy(() -> modelClient.openStream(instance, REQUEST))
                 .isInstanceOf(RestClientResponseException.class)
                 .hasMessage("Backend returned 429");
     }
@@ -119,7 +138,7 @@ class ModelClientTest {
                         """, MediaType.TEXT_EVENT_STREAM));
 
         assertThatThrownBy(() -> {
-            try (ModelStream stream = modelClient.openStream(REQUEST)) {
+            try (ModelStream stream = modelClient.openStream(instance, REQUEST)) {
                 stream.forEach(event -> { });
             }
         }).hasMessage("The backend stream ended without [DONE]");
