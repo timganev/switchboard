@@ -183,6 +183,26 @@ under the same call id (`X-Switchboard-Call-Id`). Events go out on a virtual thr
 missing broker never delays or fails a request. Until teams authenticate, the team comes from the
 `X-Switchboard-Team` header (`default` when absent) and the session from `X-Switchboard-Session`.
 
+### Budgets
+
+The ledger prices every call into Postgres (schema by Liquibase). Local calls cost nothing; a cloud
+call is priced with the price valid at the time (`model_price`, one row per model and start date,
+with a fallback row `*` so a model without a price is never free). The call id is the primary key,
+so a redelivered event is counted once. After every call the ledger publishes the team's status for
+the month (`OK`, `WARN` from 80%, `BLOCKED` at the limit) to the compacted `budget-status-changed`
+topic. Each gateway replica reads that topic from the beginning into memory, so no lookup sits on
+the request path. A team over its budget may still use local models (`X-Switchboard-Budget: spent;
+local only`); without a local instance it gets a 429 with the reason. The budget fails open while
+the topic is unread, because it is a cost control; privacy stays fail-closed.
+
+```bash
+curl -X PUT localhost:8082/v1/budgets/payments -H 'Content-Type: application/json' -d '{"monthlyLimitUsd": 50}'
+curl localhost:8082/v1/budgets/payments
+```
+
+A record a consumer cannot process is retried twice and then parked on `<consumer>-dlq` (raw bytes if
+it could not even be read), so one bad record never blocks a partition.
+
 ## Leak Lab
 
 A second model receives exactly what left the boundary and tries to recover what was hidden or to
@@ -276,6 +296,11 @@ curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
   - [x] Surrogates the model rewrites: separators, letter case, another phone prefix
   - [ ] High-entropy secrets without a known prefix
 - [ ] **3. Events:** ledger with budgets, trace, live view
+  - [x] `llm-call-completed` from the gateway and `privacy-decision-made` from the guardian, off the request path
+  - [x] Ledger: versioned prices, idempotent spend per team in Postgres, budget states on a compacted topic
+  - [x] Gateway: a team over its budget is kept on local models, or refused with the reason
+  - [x] Dead letter topics for consumers
+  - [ ] Redrive endpoint for dead letters; reconciling the estimate with the provider's bill
 - [ ] **4. Leak Lab and the decision model slot:** leakage, quality, cost and latency per strategy
 - [ ] **5. Hardening:** `SKETCH`, lethal trifecta guard, Helm charts, system tests in Kubernetes, Allure reports
 

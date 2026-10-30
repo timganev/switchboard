@@ -2,6 +2,7 @@ package io.github.timganev.switchboard.gateway.api;
 
 import io.github.timganev.switchboard.commons.Route;
 import io.github.timganev.switchboard.gateway.backend.NoBackendAvailableException;
+import io.github.timganev.switchboard.gateway.budget.BudgetExceededException;
 import io.github.timganev.switchboard.gateway.events.CallEvents;
 import io.github.timganev.switchboard.gateway.guardian.GuardianUnavailableException;
 import io.github.timganev.switchboard.gateway.guardian.RequestBlockedException;
@@ -58,6 +59,11 @@ class ApiErrors {
         log.warn("Guardian call failed: {}", exception.getCause().toString());
         return error(request, HttpStatus.SERVICE_UNAVAILABLE, "api_error",
                 "The privacy guardian is unavailable, so the request was not sent");
+    }
+
+    @ExceptionHandler(BudgetExceededException.class)
+    ResponseEntity<ObjectNode> budgetExceeded(BudgetExceededException exception, HttpServletRequest request) {
+        return error(request, HttpStatus.TOO_MANY_REQUESTS, "rate_limit_error", exception.getMessage());
     }
 
     @ExceptionHandler(NoBackendAvailableException.class)

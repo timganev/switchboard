@@ -1,6 +1,28 @@
 spring:
   application:
     name: ledger
+  datasource:
+    url: jdbc:postgresql://localhost:5432/switchboard
+    username: switchboard
+    password: switchboard
+  liquibase:
+    change-log: classpath:db/changelog/changelog.yaml
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: ledger
+      auto-offset-reset: earliest
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        spring.json.trusted.packages: io.github.timganev.switchboard.commons.event
+    producer:
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
 
 server:
   port: 8082
+
+switchboard:
+  ledger:
+    # A team's state turns WARN when it has spent this share of its monthly limit.
+    warn-at: 0.8

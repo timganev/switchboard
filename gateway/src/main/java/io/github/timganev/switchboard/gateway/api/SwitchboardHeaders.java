@@ -14,6 +14,7 @@ final class SwitchboardHeaders {
 
     static final String ROUTE = "X-Switchboard-Route";
     static final String RESPONSE_FINDINGS = "X-Switchboard-Response-Findings";
+    static final String BUDGET = "X-Switchboard-Budget";
 
     private SwitchboardHeaders() {
     }

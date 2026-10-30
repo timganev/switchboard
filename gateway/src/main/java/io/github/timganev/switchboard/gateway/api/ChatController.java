@@ -66,7 +66,7 @@ class ChatController {
         }
         ChatPipeline.Answer answer = pipeline.send(call, request);
         callEvents.completed(call, HttpStatus.OK.value());
-        return json(answer, openAiFormat.writeResponse(answer.response()));
+        return json(call, answer, openAiFormat.writeResponse(answer.response()));
     }
 
     @PostMapping("/messages")
@@ -78,13 +78,13 @@ class ChatController {
         }
         ChatPipeline.Answer answer = pipeline.send(call, request);
         callEvents.completed(call, HttpStatus.OK.value());
-        return json(answer, anthropicFormat.writeResponse(answer.response()));
+        return json(call, answer, anthropicFormat.writeResponse(answer.response()));
     }
 
     // Spring picks the return value handler by the declared type, so plain JSON answers are written as a body too.
-    private ResponseEntity<StreamingResponseBody> json(ChatPipeline.Answer answer, JsonNode json) {
+    private ResponseEntity<StreamingResponseBody> json(CallRecord call, ChatPipeline.Answer answer, JsonNode json) {
         byte[] bytes = jsonMapper.writeValueAsBytes(json);
-        return ok(answer.inspection(), answer.responseReasons()).contentType(MediaType.APPLICATION_JSON).body(out -> out.write(bytes));
+        return ok(call, answer.inspection(), answer.responseReasons()).contentType(MediaType.APPLICATION_JSON).body(out -> out.write(bytes));
     }
 
     private boolean isStreaming(JsonNode body) {
@@ -112,14 +112,17 @@ class ChatController {
             }
         };
         // The response scan needs the whole answer, so a live stream carries no findings header.
-        return ok(streamed.inspection(), List.of()).contentType(MediaType.TEXT_EVENT_STREAM).body(body);
+        return ok(call, streamed.inspection(), List.of()).contentType(MediaType.TEXT_EVENT_STREAM).body(body);
     }
 
-    private static ResponseEntity.BodyBuilder ok(Inspection inspection, List<SensitivityReason> responseReasons) {
+    private static ResponseEntity.BodyBuilder ok(CallRecord call, Inspection inspection, List<SensitivityReason> responseReasons) {
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                 .header(SwitchboardHeaders.ROUTE, SwitchboardHeaders.route(inspection.route(), inspection.reasons()));
         if (!responseReasons.isEmpty()) {
             builder.header(SwitchboardHeaders.RESPONSE_FINDINGS, SwitchboardHeaders.types(responseReasons));
+        }
+        if (call.isBudgetSpent()) {
+            builder.header(SwitchboardHeaders.BUDGET, "spent; local only");
         }
         return builder;
     }

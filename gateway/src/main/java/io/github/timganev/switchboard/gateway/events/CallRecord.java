@@ -23,6 +23,7 @@ public final class CallRecord {
     private volatile Route route;
     private volatile Backend backend;
     private volatile Usage usage;
+    private volatile boolean budgetSpent;
 
     public CallRecord(String sessionId, String team, ClientFormat clientFormat, String requestedModel) {
         this.sessionId = sessionId;
@@ -63,6 +64,10 @@ public final class CallRecord {
         return backend != null && backend.model() != null ? backend.model() : requestedModel;
     }
 
+    public boolean isBudgetSpent() {
+        return budgetSpent;
+    }
+
     public long elapsedMillis() {
         return (System.nanoTime() - startNanos) / 1_000_000;
     }
@@ -77,6 +82,10 @@ public final class CallRecord {
 
     public void usage(Usage usage) {
         this.usage = usage;
+    }
+
+    public void budgetSpent() {
+        this.budgetSpent = true;
     }
 
     // True only the first time, so a call is reported once even if both the body and an error handler finish it.

@@ -1,0 +1,55 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1-prices
+      author: tim
+      changes:
+        - createTable:
+            tableName: model_price
+            remarks: Price per million tokens; a new row with a later valid_from changes the price without rewriting history
+            columns:
+              - column: { name: model, type: varchar(200), constraints: { nullable: false } }
+              - column: { name: valid_from, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: input_usd_per_mtok, type: "numeric(12,4)", constraints: { nullable: false } }
+              - column: { name: output_usd_per_mtok, type: "numeric(12,4)", constraints: { nullable: false } }
+        - addPrimaryKey:
+            tableName: model_price
+            columnNames: model, valid_from
+        - insert:
+            tableName: model_price
+            columns:
+              # The fallback for a cloud model without its own row, so a missing price never makes calls free.
+              - column: { name: model, value: "*" }
+              - column: { name: valid_from, value: "2000-01-01 00:00:00+00" }
+              - column: { name: input_usd_per_mtok, valueNumeric: 3.0000 }
+              - column: { name: output_usd_per_mtok, valueNumeric: 15.0000 }
+  - changeSet:
+      id: 2-calls
+      author: tim
+      changes:
+        - createTable:
+            tableName: llm_call
+            remarks: One row per call; the primary key makes a redelivered event a no-op
+            columns:
+              - column: { name: call_id, type: varchar(64), constraints: { primaryKey: true } }
+              - column: { name: team, type: varchar(200), constraints: { nullable: false } }
+              - column: { name: model, type: varchar(200) }
+              - column: { name: locality, type: varchar(10) }
+              - column: { name: input_tokens, type: bigint, constraints: { nullable: false } }
+              - column: { name: output_tokens, type: bigint, constraints: { nullable: false } }
+              - column: { name: cost_usd, type: "numeric(14,6)", constraints: { nullable: false } }
+              - column: { name: occurred_at, type: timestamptz, constraints: { nullable: false } }
+        - createIndex:
+            tableName: llm_call
+            indexName: llm_call_team_occurred_at
+            columns:
+              - column: { name: team }
+              - column: { name: occurred_at }
+  - changeSet:
+      id: 3-budgets
+      author: tim
+      changes:
+        - createTable:
+            tableName: team_budget
+            columns:
+              - column: { name: team, type: varchar(200), constraints: { primaryKey: true } }
+              - column: { name: monthly_limit_usd, type: "numeric(14,6)", constraints: { nullable: false } }

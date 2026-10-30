@@ -17,6 +17,14 @@ spring:
       properties:
         # Events are sent off the request path; this bounds how long a send waits for a missing broker.
         max.block.ms: 2000
+    consumer:
+      auto-offset-reset: earliest
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        spring.json.trusted.packages: io.github.timganev.switchboard.commons.event
+        # The ledger owns the compacted budget topic; a gateway that starts first must not create it uncompacted.
+        allow.auto.create.topics: false
 
 server:
   port: 8080

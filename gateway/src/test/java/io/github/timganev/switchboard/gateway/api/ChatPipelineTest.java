@@ -20,6 +20,8 @@ import io.github.timganev.switchboard.gateway.backend.Backend;
 import io.github.timganev.switchboard.gateway.backend.Dispatched;
 import io.github.timganev.switchboard.gateway.backend.Dispatcher;
 import io.github.timganev.switchboard.gateway.backend.ModelStream;
+import io.github.timganev.switchboard.gateway.budget.BudgetBoard;
+import io.github.timganev.switchboard.gateway.budget.BudgetExceededException;
 import io.github.timganev.switchboard.gateway.events.CallRecord;
 import io.github.timganev.switchboard.gateway.guardian.GuardianClient;
 import io.github.timganev.switchboard.gateway.guardian.RequestBlockedException;
@@ -50,7 +52,8 @@ class ChatPipelineTest {
 
     private final GuardianClient guardianClient = mock(GuardianClient.class);
     private final Dispatcher dispatcher = mock(Dispatcher.class);
-    private final ChatPipeline pipeline = new ChatPipeline(guardianClient, dispatcher);
+    private final BudgetBoard budgetBoard = mock(BudgetBoard.class);
+    private final ChatPipeline pipeline = new ChatPipeline(guardianClient, dispatcher, budgetBoard);
     private final CallRecord call = new CallRecord(null, "team-a", ClientFormat.OPENAI, "qwen36");
 
     @Test
@@ -78,6 +81,30 @@ class ChatPipelineTest {
         pipeline.send(call, ORIGINAL);
 
         verify(guardianClient, never()).restore(any(), any());
+    }
+
+    @Test
+    void shouldSendATeamOverItsBudgetToLocalInstancesOnly() {
+        when(budgetBoard.isBlocked("team-a")).thenReturn(true);
+        when(dispatcher.serves(EnumSet.of(Locality.LOCAL))).thenReturn(true);
+        when(guardianClient.inspect(ORIGINAL, call.callId(), null)).thenReturn(new Inspection(Route.CLOUD, List.of(), ORIGINAL, null));
+        when(dispatcher.send(EnumSet.of(Locality.LOCAL), ORIGINAL)).thenReturn(new Dispatched<>(LOCAL_BACKEND, answer("Done")));
+
+        pipeline.send(call, ORIGINAL);
+
+        assertThat(call.isBudgetSpent()).isTrue();
+        assertThat(call.backend()).isEqualTo(LOCAL_BACKEND);
+    }
+
+    @Test
+    void shouldRefuseATeamOverItsBudgetWhenNoLocalInstanceIsConfigured() {
+        when(budgetBoard.isBlocked("team-a")).thenReturn(true);
+        when(guardianClient.inspect(ORIGINAL, call.callId(), null)).thenReturn(new Inspection(Route.CLOUD, List.of(), ORIGINAL, null));
+
+        assertThatThrownBy(() -> pipeline.send(call, ORIGINAL))
+                .isInstanceOf(BudgetExceededException.class)
+                .hasMessage("The monthly budget of team team-a is spent and no local model is configured");
+        verify(dispatcher, never()).send(any(), any());
     }
 
     @Test

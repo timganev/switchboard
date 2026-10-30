@@ -13,6 +13,7 @@ import io.github.timganev.switchboard.commons.Route;
 import io.github.timganev.switchboard.commons.event.SensitivityReason;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.gateway.backend.ModelStream;
+import io.github.timganev.switchboard.gateway.budget.BudgetExceededException;
 import io.github.timganev.switchboard.gateway.events.CallEvents;
 import io.github.timganev.switchboard.gateway.events.CallRecord;
 import io.github.timganev.switchboard.gateway.guardian.GuardianUnavailableException;
@@ -245,6 +246,39 @@ class ChatControllerTest {
                 .andExpect(jsonPath("$.error.type").value("permission_error"))
                 .andExpect(jsonPath("$.error.message").value("The request was blocked because it contains PRIVATE_KEY"));
         verify(callEvents).failed(any(), eq(403));
+    }
+
+    @Test
+    void shouldRefuseATeamOverItsBudgetWithTheReason() throws Exception {
+        when(pipeline.send(any(), any())).thenThrow(new BudgetExceededException("team-a"));
+
+        mockMvc.perform(post("/v1/chat/completions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"model": "qwen36", "messages": [{"role": "user", "content": "Hi"}]}
+                                """))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error.type").value("rate_limit_error"))
+                .andExpect(jsonPath("$.error.message").value("The monthly budget of team team-a is spent and no local model is configured"));
+        verify(callEvents).failed(any(), eq(429));
+    }
+
+    @Test
+    void shouldTellTheClientWhenTheBudgetKeptTheCallLocal() throws Exception {
+        when(pipeline.send(any(), any())).thenAnswer(invocation -> {
+            invocation.<CallRecord>getArgument(0).budgetSpent();
+            return new ChatPipeline.Answer(CLOUD, ANSWER, List.of());
+        });
+
+        MvcResult result = mockMvc.perform(post("/v1/chat/completions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"model": "qwen36", "messages": [{"role": "user", "content": "Hi"}]}
+                                """))
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(result))
+                .andExpect(header().string("X-Switchboard-Budget", "spent; local only"));
     }
 
     @Test
