@@ -34,6 +34,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -74,6 +77,9 @@ class LedgerIntegrationTest {
 
     @Autowired
     private PriceBook priceBook;
+
+    @Autowired
+    private Ledger ledger;
 
     @Test
     void shouldBlockATeamOnceItsCloudSpendReachesTheLimit() throws Exception {
@@ -187,9 +193,68 @@ class LedgerIntegrationTest {
                 .andExpect(jsonPath("$[?(@.key == 'still-poison')].topic").value(hasItem(DeadLetters.redriveTopic("ledger")))));
     }
 
+    @Test
+    void shouldShareABilledDayOutByEachTeamsEstimate() throws Exception {
+        Instant billedDay = Instant.parse("2026-09-15T10:00:00Z");
+        // At the fallback price: 3 and 6 USD on the billed day, 3 USD on a day the provider has not billed yet.
+        kafka.send(Topics.LLM_CALL_COMPLETED, "team-x", call("team-x", Locality.CLOUD, "billed-model", 1_000_000, 0, billedDay));
+        kafka.send(Topics.LLM_CALL_COMPLETED, "team-y", call("team-y", Locality.CLOUD, "billed-model", 2_000_000, 0, billedDay));
+        kafka.send(Topics.LLM_CALL_COMPLETED, "team-x", call("team-x", Locality.CLOUD, "billed-model", 1_000_000, 0, billedDay.plusSeconds(86_400)));
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(
+                jdbc.sql("SELECT COUNT(*) FROM llm_call WHERE team IN ('team-x', 'team-y')").query(Long.class).single()).isEqualTo(3));
+
+        mockMvc.perform(post("/v1/bills").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lines\": [{\"date\": \"2026-09-15\", \"model\": \"billed-model\", \"costUsd\": 18}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].estimatedUsd").value(9.0))
+                .andExpect(jsonPath("$[0].billedUsd").value(18))
+                .andExpect(jsonPath("$[0].differenceUsd").value(9.0));
+
+        BudgetStatusChanged x = ledger.status("team-x", YearMonth.of(2026, 9));
+        assertThat(x.spentEstimate()).isEqualByComparingTo("6");
+        assertThat(x.spentReconciled()).isEqualByComparingTo("9");
+        assertThat(ledger.status("team-y", YearMonth.of(2026, 9)).spentReconciled()).isEqualByComparingTo("12");
+
+        // A corrected bill replaces the first import.
+        mockMvc.perform(post("/v1/bills").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lines\": [{\"date\": \"2026-09-15\", \"model\": \"billed-model\", \"costUsd\": 4.5}]}"))
+                .andExpect(status().isOk());
+        assertThat(ledger.status("team-x", YearMonth.of(2026, 9)).spentReconciled()).isEqualByComparingTo("4.5");
+    }
+
+    @Test
+    void shouldBlockATeamWhenTheBillForThisMonthIsAboveTheEstimate() throws Exception {
+        mockMvc.perform(put("/v1/budgets/team-z").contentType(MediaType.APPLICATION_JSON).content("{\"monthlyLimitUsd\": 5}"))
+                .andExpect(status().isOk());
+        kafka.send(Topics.LLM_CALL_COMPLETED, "team-z", call("team-z", Locality.CLOUD, "today-model", 1_000_000, 0));
+        BudgetStatusChanged estimated = awaitStatus("team-z", status -> status.spentEstimate().signum() > 0);
+        assertThat(estimated.state()).isEqualTo(BudgetState.OK);
+
+        mockMvc.perform(post("/v1/bills").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lines\": [{\"date\": \"" + LocalDate.now(ZoneOffset.UTC) + "\", \"model\": \"today-model\", \"costUsd\": 6}]}"))
+                .andExpect(status().isOk());
+
+        BudgetStatusChanged billed = awaitStatus("team-z", status -> status.state() == BudgetState.BLOCKED);
+        assertThat(billed.spentEstimate()).isEqualByComparingTo("3");
+        assertThat(billed.spentReconciled()).isEqualByComparingTo("6");
+    }
+
+    @Test
+    void shouldRefuseABillWithTheSameDayAndModelTwice() throws Exception {
+        mockMvc.perform(post("/v1/bills").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"lines": [{"date": "2026-09-01", "model": "m", "costUsd": 1},
+                                           {"date": "2026-09-01", "model": "m", "costUsd": 2}]}"""))
+                .andExpect(status().isBadRequest());
+    }
+
     private static LlmCallCompleted call(String team, Locality locality, String model, long input, long output) {
+        return call(team, locality, model, input, output, Instant.now());
+    }
+
+    private static LlmCallCompleted call(String team, Locality locality, String model, long input, long output, Instant at) {
         return new LlmCallCompleted(UUID.randomUUID().toString(), null, team, ClientFormat.OPENAI, Route.CLOUD, locality,
-                locality == null ? null : "instance-1", model, input, output, 0, 100, 200, null, Instant.now());
+                locality == null ? null : "instance-1", model, input, output, 0, 100, 200, null, at);
     }
 
     private static BudgetStatusChanged awaitStatus(String team, Predicate<BudgetStatusChanged> matching) {

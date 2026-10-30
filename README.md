@@ -7,8 +7,8 @@ must not leave. Switchboard is the single door all LLM traffic goes through. For
 decides where the request may go, sends it there, and records why.
 
 > **Status:** the gateway, the guardian, the ledger and the trace work: both APIs, streaming, the
-> in-flight board, surrogates and restore, events, budgets, masked traces and the live view. Leak Lab
-> is next (see [Roadmap](#roadmap)).
+> in-flight board, surrogates and restore, events, budgets reconciled with the bill, masked traces
+> and the live view. Leak Lab is next (see [Roadmap](#roadmap)).
 
 ## Principles
 
@@ -201,6 +201,20 @@ curl -X PUT localhost:8082/v1/budgets/payments -H 'Content-Type: application/jso
 curl localhost:8082/v1/budgets/payments
 ```
 
+The estimate is only as good as the price table. The provider's own bill comes days later, per day
+and model rather than per call, so the ledger takes it in as lines (`POST /v1/bills`; a later import
+of the same day and model replaces the earlier one) and shares each billed amount out by every team's
+estimate for that day and model. A status carries both numbers: `spentEstimate`, and
+`spentReconciled` (billed days at what was billed, the rest still estimated). The state follows
+`spentReconciled`, because it is the best known spend. A billed amount with no estimate behind it is
+reported in the comparison but charged to no team.
+
+```bash
+curl -X POST localhost:8082/v1/bills -H 'Content-Type: application/json' \
+  -d '{"lines": [{"date": "2026-10-30", "model": "cloud-model", "costUsd": 18.40}]}'
+# [{"date":"2026-10-30","model":"cloud-model","estimatedUsd":16.92,"billedUsd":18.40,"differenceUsd":1.48}]
+```
+
 ### Traces
 
 The trace service merges both events of a call into one OpenSearch document: route, instance,
@@ -331,7 +345,7 @@ curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
   - [x] Restore inside a live stream, even when a surrogate is split across chunks
   - [x] Surrogates the model rewrites: separators, letter case, another phone prefix
   - [ ] High-entropy secrets without a known prefix
-- [ ] **3. Events:** ledger with budgets, trace, live view
+- [x] **3. Events:** ledger with budgets, trace, live view
   - [x] `llm-call-completed` from the gateway and `privacy-decision-made` from the guardian, off the request path
   - [x] Ledger: versioned prices, idempotent spend per team in Postgres, budget states on a compacted topic
   - [x] Gateway: a team over its budget is kept on local models, or refused with the reason
@@ -339,7 +353,7 @@ curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
   - [x] Trace: the call and its privacy decision merged into one masked document in OpenSearch
   - [x] Live view: every call with its route and reasons, pushed to the browser as it finishes
   - [x] Redrive endpoint for dead letters
-  - [ ] Reconciling the estimate with the provider's bill
+  - [x] Reconciling the estimate with the provider's bill
 - [ ] **4. Leak Lab and the decision model slot:** leakage, quality, cost and latency per strategy
 - [ ] **5. Hardening:** `SKETCH`, lethal trifecta guard, Helm charts, system tests in Kubernetes, Allure reports
 

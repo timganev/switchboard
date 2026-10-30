@@ -72,22 +72,38 @@ public class Ledger {
         return status(team, YearMonth.now(clock));
     }
 
+    /**
+     * The estimate, and the estimate corrected by the bills so far: a billed day and model is shared out by each team's estimate.
+     */
     @Transactional(readOnly = true)
     public BudgetStatusChanged status(String team, YearMonth period) {
-        BigDecimal spent = jdbc.sql("""
-                        SELECT COALESCE(SUM(cost_usd), 0) FROM llm_call
-                        WHERE team = :team AND occurred_at >= :from AND occurred_at < :to""")
+        Spent spent = jdbc.sql("""
+                        WITH estimate AS (
+                            SELECT (occurred_at AT TIME ZONE 'UTC')::date AS day, model, SUM(cost_usd) AS cost_usd
+                            FROM llm_call
+                            WHERE locality = 'CLOUD' AND occurred_at >= :from AND occurred_at < :to
+                            GROUP BY 1, 2)
+                        SELECT COALESCE(SUM(c.cost_usd), 0),
+                               COALESCE(ROUND(SUM(CASE WHEN b.cost_usd IS NULL OR e.cost_usd = 0 THEN c.cost_usd
+                                                       ELSE c.cost_usd * b.cost_usd / e.cost_usd END), 6), 0)
+                        FROM llm_call c
+                        LEFT JOIN provider_bill b ON c.locality = 'CLOUD'
+                             AND b.bill_date = (c.occurred_at AT TIME ZONE 'UTC')::date AND b.model = c.model
+                        LEFT JOIN estimate e ON e.day = b.bill_date AND e.model = b.model
+                        WHERE c.team = :team AND c.occurred_at >= :from AND c.occurred_at < :to""")
                 .param("team", team)
                 .param("from", period.atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC))
                 .param("to", period.plusMonths(1).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC))
-                .query(BigDecimal.class)
+                .query((row, number) -> new Spent(row.getBigDecimal(1), row.getBigDecimal(2)))
                 .single();
         BigDecimal limit = jdbc.sql("SELECT monthly_limit_usd FROM team_budget WHERE team = :team")
                 .param("team", team)
                 .query(BigDecimal.class)
                 .optional()
                 .orElse(null);
-        return new BudgetStatusChanged(team, period, spent, null, limit, state(spent, limit, properties.warnAt()), Instant.now(clock));
+        // The corrected figure decides the state: it is the best known spend.
+        return new BudgetStatusChanged(team, period, spent.estimate(), spent.reconciled(), limit,
+                state(spent.reconciled(), limit, properties.warnAt()), Instant.now(clock));
     }
 
     static BudgetState state(BigDecimal spent, BigDecimal limit, BigDecimal warnAt) {
@@ -98,5 +114,8 @@ public class Ledger {
             return BudgetState.BLOCKED;
         }
         return spent.compareTo(limit.multiply(warnAt)) >= 0 ? BudgetState.WARN : BudgetState.OK;
+    }
+
+    private record Spent(BigDecimal estimate, BigDecimal reconciled) {
     }
 }

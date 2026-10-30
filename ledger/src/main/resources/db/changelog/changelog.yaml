@@ -53,3 +53,18 @@ databaseChangeLog:
             columns:
               - column: { name: team, type: varchar(200), constraints: { primaryKey: true } }
               - column: { name: monthly_limit_usd, type: "numeric(14,6)", constraints: { nullable: false } }
+  - changeSet:
+      id: 4-bills
+      author: tim
+      changes:
+        - createTable:
+            tableName: provider_bill
+            remarks: What the provider charged per day and model; arrives days later and may be corrected by a new import
+            columns:
+              - column: { name: bill_date, type: date, constraints: { nullable: false } }
+              - column: { name: model, type: varchar(200), constraints: { nullable: false } }
+              - column: { name: cost_usd, type: "numeric(14,6)", constraints: { nullable: false } }
+              - column: { name: imported_at, type: timestamptz, constraints: { nullable: false } }
+        - addPrimaryKey:
+            tableName: provider_bill
+            columnNames: bill_date, model
