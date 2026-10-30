@@ -1,5 +1,9 @@
 package io.github.timganev.switchboard.trace;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -21,6 +25,8 @@ import java.util.Optional;
  */
 @Component
 public class TraceStore {
+
+    private static final Logger log = LoggerFactory.getLogger(TraceStore.class);
 
     static final String INDEX = "switchboard-calls";
     // Both topics may update the same document at once.
@@ -80,6 +86,16 @@ public class TraceStore {
         return calls;
     }
 
+    // Created before the first read where possible; while OpenSearch is down, the first write creates it.
+    @EventListener(ApplicationReadyEvent.class)
+    void createIndex() {
+        try {
+            ensureIndex();
+        } catch (RuntimeException exception) {
+            log.warn("Could not create {} yet, the first write will: {}", INDEX, exception.toString());
+        }
+    }
+
     // Created with an explicit mapping before the first write, or OpenSearch would guess the field types.
     private void ensureIndex() {
         if (indexReady) {
@@ -93,6 +109,8 @@ public class TraceStore {
                 throw exception;
             }
         }
+        // A new index answers 503 until its shard has started.
+        openSearch.get().uri("/_cluster/health/{index}?wait_for_status=yellow&timeout=30s", INDEX).retrieve().toBodilessEntity();
         indexReady = true;
     }
 
