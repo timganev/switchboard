@@ -4,10 +4,12 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -16,6 +18,12 @@ import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @Testcontainers
 class RedisInflightBoardTest {
@@ -44,8 +52,8 @@ class RedisInflightBoardTest {
 
     @Test
     void shouldShareTheCountsBetweenReplicas() {
-        RedisInflightBoard replica1 = new RedisInflightBoard(redis, Duration.ofMinutes(1), new LocalInflightBoard());
-        RedisInflightBoard replica2 = new RedisInflightBoard(redis, Duration.ofMinutes(1), new LocalInflightBoard());
+        RedisInflightBoard replica1 = board(redis, Duration.ofMinutes(1), new LocalInflightBoard());
+        RedisInflightBoard replica2 = board(redis, Duration.ofMinutes(1), new LocalInflightBoard());
 
         Lease first = replica1.acquire(List.of("a", "b"));
         Lease second = replica2.acquire(List.of("a", "b"));
@@ -57,7 +65,7 @@ class RedisInflightBoardTest {
 
     @Test
     void shouldReleaseTheLeaseWhenClosed() {
-        RedisInflightBoard board = new RedisInflightBoard(redis, Duration.ofMinutes(1), new LocalInflightBoard());
+        RedisInflightBoard board = board(redis, Duration.ofMinutes(1), new LocalInflightBoard());
 
         Lease lease = board.acquire(List.of("a", "b"));
         lease.close();
@@ -68,7 +76,7 @@ class RedisInflightBoardTest {
 
     @Test
     void shouldForgetALeaseThatWasNeverClosed() throws InterruptedException {
-        RedisInflightBoard board = new RedisInflightBoard(redis, Duration.ofMillis(200), new LocalInflightBoard());
+        RedisInflightBoard board = board(redis, Duration.ofMillis(200), new LocalInflightBoard());
         board.acquire(List.of("a", "b"));
 
         Thread.sleep(300);
@@ -81,7 +89,7 @@ class RedisInflightBoardTest {
         LettuceConnectionFactory deadFactory = factory("localhost", 1);
         try {
             LocalInflightBoard fallback = new LocalInflightBoard();
-            RedisInflightBoard board = new RedisInflightBoard(new StringRedisTemplate(deadFactory), Duration.ofMinutes(1), fallback);
+            RedisInflightBoard board = board(new StringRedisTemplate(deadFactory), Duration.ofMinutes(1), fallback);
 
             Lease lease = board.acquire(List.of("a", "b"));
 
@@ -92,8 +100,34 @@ class RedisInflightBoardTest {
         }
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldStopAskingRedisWhileItKeepsFailingAndTryAgainLater() throws InterruptedException {
+        StringRedisTemplate failing = mock(StringRedisTemplate.class);
+        when(failing.execute(any(RedisScript.class), anyList(), any(), any()))
+                .thenThrow(new RedisConnectionFailureException("Connection refused"));
+        LocalInflightBoard fallback = new LocalInflightBoard();
+        RedisInflightBoard board = new RedisInflightBoard(failing, Duration.ofMinutes(1), fallback,
+                RedisInflightBoard.circuitBreaker(Duration.ofMillis(200)));
+
+        for (int i = 0; i < 10; i++) {
+            board.acquire(List.of("a")).close();
+        }
+        verify(failing, times(3)).execute(any(RedisScript.class), anyList(), any(), any());
+
+        Thread.sleep(300);
+        board.acquire(List.of("a")).close();
+
+        verify(failing, times(4)).execute(any(RedisScript.class), anyList(), any(), any());
+        assertThat(fallback.count("a")).isZero();
+    }
+
     private static long count(String instance) {
         return redis.opsForZSet().zCard(RedisInflightBoard.KEY_PREFIX + instance);
+    }
+
+    private static RedisInflightBoard board(StringRedisTemplate template, Duration leaseTtl, InflightBoard fallback) {
+        return new RedisInflightBoard(template, leaseTtl, fallback, RedisInflightBoard.circuitBreaker(Duration.ofSeconds(10)));
     }
 
     private static LettuceConnectionFactory factory(String host, int port) {

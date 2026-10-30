@@ -152,7 +152,9 @@ right now. A small Lua script reads the board, picks the least busy instance and
 count in one atomic step, so several gateway replicas never pile onto the same instance while another
 is idle. Local models serve only a few requests at once, so this has a direct effect on latency.
 Counts are leases with a TTL, so a crashed gateway cannot leave an instance marked busy forever. If
-Redis is down, each replica falls back to counting its own requests.
+Redis is down, each replica falls back to counting its own requests; a circuit breaker
+(resilience4j) then skips Redis for a while (`switchboard.board.redis-retry-after`, 10s), so requests
+do not each wait for a Redis timeout.
 
 ### Lethal trifecta guard
 

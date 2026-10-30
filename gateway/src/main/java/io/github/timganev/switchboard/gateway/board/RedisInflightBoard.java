@@ -1,5 +1,8 @@
 package io.github.timganev.switchboard.gateway.board;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
@@ -15,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * The board shared by all gateway replicas: a Lua script picks the least busy instance and counts the request in one atomic step.
  * Each request is a lease with an expiry, so a replica that dies mid-request does not leave its count behind.
+ * While Redis keeps failing, a circuit breaker skips it for a while, so requests do not each wait for a timeout.
  */
 public class RedisInflightBoard implements InflightBoard {
 
@@ -25,12 +29,28 @@ public class RedisInflightBoard implements InflightBoard {
     private final StringRedisTemplate redis;
     private final Duration leaseTtl;
     private final InflightBoard fallback;
+    private final CircuitBreaker circuitBreaker;
     private final RedisScript<String> acquireScript = RedisScript.of(new ClassPathResource("board/acquire.lua"), String.class);
 
-    public RedisInflightBoard(StringRedisTemplate redis, Duration leaseTtl, InflightBoard fallback) {
+    public RedisInflightBoard(StringRedisTemplate redis, Duration leaseTtl, InflightBoard fallback, CircuitBreaker circuitBreaker) {
         this.redis = redis;
         this.leaseTtl = leaseTtl;
         this.fallback = fallback;
+        this.circuitBreaker = circuitBreaker;
+    }
+
+    public static CircuitBreaker circuitBreaker(Duration retryAfter) {
+        CircuitBreaker circuitBreaker = CircuitBreaker.of("redis-board", CircuitBreakerConfig.custom()
+                .slidingWindowSize(5)
+                .minimumNumberOfCalls(3)
+                .failureRateThreshold(50)
+                .waitDurationInOpenState(retryAfter)
+                .permittedNumberOfCallsInHalfOpenState(1)
+                .recordExceptions(DataAccessException.class)
+                .build());
+        circuitBreaker.getEventPublisher().onStateTransition(event ->
+                log.warn("Redis board circuit breaker: {}", event.getStateTransition()));
+        return circuitBreaker;
     }
 
     @Override
@@ -41,8 +61,10 @@ public class RedisInflightBoard implements InflightBoard {
         String leaseId = UUID.randomUUID().toString();
         String key;
         try {
-            key = redis.execute(acquireScript, candidates.stream().map(candidate -> KEY_PREFIX + candidate).toList(),
-                    leaseId, String.valueOf(leaseTtl.toMillis()));
+            key = circuitBreaker.executeSupplier(() -> redis.execute(acquireScript,
+                    candidates.stream().map(candidate -> KEY_PREFIX + candidate).toList(), leaseId, String.valueOf(leaseTtl.toMillis())));
+        } catch (CallNotPermittedException exception) {
+            return fallback.acquire(candidates);
         } catch (DataAccessException exception) {
             log.warn("Redis board unavailable, counting this replica only: {}", exception.getMostSpecificCause().toString());
             return fallback.acquire(candidates);
@@ -66,7 +88,9 @@ public class RedisInflightBoard implements InflightBoard {
 
     private void release(String key, String leaseId) {
         try {
-            redis.opsForZSet().remove(key, leaseId);
+            circuitBreaker.executeRunnable(() -> redis.opsForZSet().remove(key, leaseId));
+        } catch (CallNotPermittedException exception) {
+            log.debug("Redis board skipped, lease on {} expires on its own", key);
         } catch (DataAccessException exception) {
             log.warn("Could not release lease on {}, it expires on its own: {}", key, exception.getMostSpecificCause().toString());
         }

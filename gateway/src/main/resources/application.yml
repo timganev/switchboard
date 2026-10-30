@@ -26,6 +26,8 @@ switchboard:
     type: local
     # Matches the longest request, so a lease left by a crashed replica expires soon after.
     lease-ttl: 10m
+    # After repeated Redis failures the board counts locally for this long before trying Redis again.
+    redis-retry-after: 10s
   guardian:
     url: http://localhost:8081
     timeout: 5s

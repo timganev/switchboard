@@ -13,8 +13,9 @@ class BoardConfiguration {
 
     @Bean
     @ConditionalOnProperty(name = "switchboard.board.type", havingValue = "redis")
-    InflightBoard redisInflightBoard(StringRedisTemplate redis, @Value("${switchboard.board.lease-ttl}") Duration leaseTtl) {
-        return new RedisInflightBoard(redis, leaseTtl, new LocalInflightBoard());
+    InflightBoard redisInflightBoard(StringRedisTemplate redis, @Value("${switchboard.board.lease-ttl}") Duration leaseTtl,
+                                     @Value("${switchboard.board.redis-retry-after}") Duration retryAfter) {
+        return new RedisInflightBoard(redis, leaseTtl, new LocalInflightBoard(), RedisInflightBoard.circuitBreaker(retryAfter));
     }
 
     @Bean
