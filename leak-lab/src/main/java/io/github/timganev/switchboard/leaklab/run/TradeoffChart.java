@@ -87,13 +87,13 @@ public final class TradeoffChart {
         return svg.append("</svg>\n").toString();
     }
 
-    // Right of the dot, else left of it, else pushed down; never off the canvas or over another label or dot.
+    // Right of the dot, else left of it, else pushed down; never outside the plot or over another label or dot.
     private static double[] label(double x, double y, double width, List<double[]> placed) {
         double top = y - LABEL_HEIGHT / 2.0;
         for (double shift = 0; ; shift += LABEL_HEIGHT) {
             for (double left : new double[]{x + LABEL_GAP, x - LABEL_GAP - width}) {
                 double[] box = {left, top + shift, width, LABEL_HEIGHT};
-                if (left >= 0 && left + width <= WIDTH - EDGE && placed.stream().noneMatch(other -> overlaps(box, other))) {
+                if (left >= LEFT && left + width <= WIDTH - EDGE && placed.stream().noneMatch(other -> overlaps(box, other))) {
                     return box;
                 }
             }

@@ -9,7 +9,7 @@ decides where the request may go, sends it there, and records why.
 > **Status:** the gateway, the guardian, the ledger and the trace work: both APIs, streaming, the
 > in-flight board, surrogates and restore, events, budgets reconciled with the bill, masked traces
 > and the live view. Leak Lab measures leakage, re-identification, answer quality, cost and latency per
-> strategy; the decision model slot is next (see [Roadmap](#roadmap)).
+> strategy, with the decision model slot and without; hardening is next (see [Roadmap](#roadmap)).
 
 ## Principles
 
@@ -294,6 +294,7 @@ what leaves:
 | `MASK` | what the guardian found, replaced by `***` |
 | `PLACEHOLDER` | what the guardian found, replaced by `[EGN_1]`, `[PHONE_1]`… |
 | `SURROGATE` | what the guardian really sends: realistic fake values |
+| `SURROGATE_MODEL` | the same with the [decision model slot](#the-decision-model-slot) on: nothing when the model finds a name or health data |
 | `LOCAL` | nothing |
 
 Two numbers per strategy: the share of real values that left, and how often an attacker model names
@@ -304,7 +305,7 @@ local `qwen3.6:35b-a3b`.
 Then the user's side. Each strategy's prompt is answered (by the cloud model, or by the local one
 when nothing may leave), and the answer is turned back into what the user would see: placeholders and
 surrogates are replaced by the real values, masks stay masks. A trusted judge model sees the original
-request and grades all five answers side by side, in a shuffled order, from 1 to 5. Cost prices only
+request and grades all the answers side by side, in a shuffled order, from 1 to 5. Cost prices only
 the tokens that went to the cloud; latency includes the guardian where it is on the path. In this run
 one local model stands in for both the cloud and the local model, so the answers differ only by what
 each strategy sent, and the price is the ledger's fallback of 3 and 15 USD per million tokens.
@@ -316,15 +317,19 @@ curl localhost:8084/v1/runs/<run id>/chart.svg
 ```
 
 Run of 2 November 2026: 20 prompts, 50 real values, seed 42, `qwen3.6:35b-a3b` as attacker and judge
-(thinking) and as both answer models (no thinking); 80 minutes on an Apple Silicon laptop.
+(thinking), as both answer models (no thinking) and as the decision model (a little thinking); 100
+minutes on an Apple Silicon laptop. The raw scores are in
+[`docs/leak-lab-run-2026-11-02-decision-model.json`](docs/leak-lab-run-2026-11-02-decision-model.json),
+and an earlier run without the decision model in [`docs/leak-lab-run-2026-11-02.json`](docs/leak-lab-run-2026-11-02.json).
 
 | Strategy | Real values that left | Right person named | Without the name | Answer quality | Cloud cost | Mean latency |
 |---|---|---|---|---|---|---|
-| `NONE` | 50 of 50 | 20 of 20 | 10 of 10 | 4.8 | $0.098 | 6.2 s |
-| `MASK` | 0 | 15 of 20 | 5 of 10 | 3.35 | $0.074 | 4.8 s |
-| `PLACEHOLDER` | 0 | 16 of 20 | 6 of 10 | 4.6 | $0.077 | 4.9 s |
-| `SURROGATE` | 0 | 12 of 20 | 3 of 10 | 4.6 | $0.095 | 6.0 s |
-| `LOCAL` | 0 | 0 | 0 | 4.8 | $0 | 6.1 s |
+| `NONE` | 50 of 50 | 20 of 20 | 10 of 10 | 4.7 | $0.098 | 6.2 s |
+| `MASK` | 0 | 15 of 20 | 5 of 10 | 3.25 | $0.074 | 4.8 s |
+| `PLACEHOLDER` | 0 | 16 of 20 | 6 of 10 | 4.6 | $0.077 | 5.0 s |
+| `SURROGATE` | 0 | 12 of 20 | 3 of 10 | 4.65 | $0.095 | 6.0 s |
+| `SURROGATE_MODEL` | 0 | 2 of 20 | 2 of 10 | 4.65 | $0.029 | 32.2 s |
+| `LOCAL` | 0 | 0 | 0 | 4.7 | $0 | 6.0 s |
 
 ![Answer quality against people re-identified, per strategy](docs/leak-lab-tradeoff.svg)
 
@@ -336,15 +341,23 @@ What it says, with only 20 cases behind it:
   recognised under every strategy that sends anything (10 of 10 with masks, 9 of 10 with surrogates).
 - Surrogates did a little better than masks because a fake EGN carries a fake date of birth, which
   points the attacker the wrong way. One case is ten points here, so this needs a larger run: the
-  first run of the same set gave 13 of 20 for surrogates and 15 for placeholders, so the attacker
-  moves by a case or two between runs even at temperature 0.
-- Masks cost answer quality (3.35 against 4.8): the answer keeps `***` where the user needed the
+  very first run of the same set gave 13 of 20 for surrogates and 15 for placeholders, so the attacker
+  moves by a case or two between runs even at temperature 0. The two runs of 2 November agreed on
+  every re-identification, and their quality grades differ by 0.1 at most.
+- The decision model closes the name gap: with it, no named prompt was recognised (0 of 10, against
+  9 of 10 with surrogates alone), because those prompts stayed local. About two thirds of all prompts
+  stayed local, so the cloud cost fell by two thirds while quality held. The price is latency: every
+  check took about 20 seconds with this model, so the mean went from 6 to 32 seconds. The two
+  recognised people were in unnamed prompts that the model let through, where only the town and the
+  job were left.
+- Masks cost answer quality (3.25 against 4.7): the answer keeps `***` where the user needed the
   phone or the EGN. Placeholders and surrogates come back as real values and lose almost nothing.
 - Cost and latency follow the length of the answer, not the strategy: the guardian adds milliseconds,
   and a masked prompt gets a shorter, cheaper and worse answer. Surrogates cost what no protection
   costs, because the prompt looks just as real.
-- `LOCAL` wins on paper only because the same model answers. With a weaker local model its quality
-  is the number to watch; that is the trade-off the decision model slot is for.
+- `LOCAL` and `SURROGATE_MODEL` win on quality only because the same model answers locally. With a
+  weaker local model, the quality of what stays local is the number to watch, and a faster decision
+  model is what would make the slot usable on every request.
 
 ## Repository layout
 
@@ -464,7 +477,7 @@ curl -X POST 'localhost:8084/v1/runs?cases=20'
 - [ ] **4. Leak Lab and the decision model slot:** leakage, quality, cost and latency per strategy
   - [x] Leakage and re-identification per strategy, measured against the real guardian
   - [x] Answer quality, cost and latency per strategy, and the privacy versus utility chart
-  - [ ] The decision model slot, measured with and without
+  - [x] The decision model slot, measured with and without
   - [ ] A larger run (all 40 people, several seeds), so one case is no longer ten points
   - [ ] A weaker local model for `LOCAL`, so its quality is measured rather than borrowed from the cloud stand-in
   - [ ] Recall and precision of the detectors and of the decision model, and the time each adds

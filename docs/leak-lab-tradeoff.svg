@@ -35,14 +35,16 @@
 <text x="115.6" y="336.0" text-anchor="start">blind guess</text>
 <text x="292.0" y="388.0" text-anchor="middle">People re-identified by the attacker</text>
 <text x="16" y="184.0" text-anchor="middle" transform="rotate(-90 16 184.0)">Answer quality (judge, 1 to 5)</text>
-<circle class="dot" cx="520.0" cy="40.0" r="6"><title>NONE: 100% re-identified, quality 4.8, 6204 ms</title></circle>
-<text class="label" x="530.0" y="44.0" text-anchor="start">NONE</text>
-<circle class="dot" cx="64.0" cy="40.0" r="6"><title>LOCAL: 0% re-identified, quality 4.8, 6088 ms</title></circle>
-<text class="label" x="74.0" y="44.0" text-anchor="start">LOCAL</text>
-<circle class="dot" cx="428.8" cy="56.0" r="6"><title>PLACEHOLDER: 80% re-identified, quality 4.6, 4942 ms</title></circle>
-<text class="label" x="438.8" y="60.0" text-anchor="start">PLACEHOLDER</text>
-<circle class="dot" cx="337.6" cy="56.0" r="6"><title>SURROGATE: 60% re-identified, quality 4.6, 6023 ms</title></circle>
-<text class="label" x="246.6" y="60.0" text-anchor="start">SURROGATE</text>
-<circle class="dot" cx="406.0" cy="156.0" r="6"><title>MASK: 75% re-identified, quality 3.4, 4811 ms</title></circle>
-<text class="label" x="416.0" y="160.0" text-anchor="start">MASK</text>
+<circle class="dot" cx="520.0" cy="48.0" r="6"><title>NONE: 100% re-identified, quality 4.7, 6229 ms</title></circle>
+<text class="label" x="530.0" y="52.0" text-anchor="start">NONE</text>
+<circle class="dot" cx="64.0" cy="48.0" r="6"><title>LOCAL: 0% re-identified, quality 4.7, 5992 ms</title></circle>
+<text class="label" x="74.0" y="84.0" text-anchor="start">LOCAL</text>
+<circle class="dot" cx="337.6" cy="52.0" r="6"><title>SURROGATE: 60% re-identified, quality 4.7, 6031 ms</title></circle>
+<text class="label" x="246.6" y="56.0" text-anchor="start">SURROGATE</text>
+<circle class="dot" cx="109.6" cy="52.0" r="6"><title>SURROGATE_MODEL: 10% re-identified, quality 4.7, 32236 ms</title></circle>
+<text class="label" x="119.6" y="72.0" text-anchor="start">SURROGATE_MODEL</text>
+<circle class="dot" cx="428.8" cy="56.0" r="6"><title>PLACEHOLDER: 80% re-identified, quality 4.6, 4951 ms</title></circle>
+<text class="label" x="438.8" y="76.0" text-anchor="start">PLACEHOLDER</text>
+<circle class="dot" cx="406.0" cy="164.0" r="6"><title>MASK: 75% re-identified, quality 3.3, 4823 ms</title></circle>
+<text class="label" x="416.0" y="168.0" text-anchor="start">MASK</text>
 </svg>
