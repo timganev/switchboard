@@ -22,6 +22,8 @@ public enum Strategy {
     MASK,
     PLACEHOLDER,
     SURROGATE,
+    // The guardian with its decision model slot on; measured only when such a guardian is configured.
+    SURROGATE_MODEL,
     LOCAL;
 
     /**
@@ -32,7 +34,7 @@ public enum Strategy {
             case NONE -> Optional.of(prompt);
             case MASK -> Optional.of(replaced(prompt, inspection, false));
             case PLACEHOLDER -> Optional.of(replaced(prompt, inspection, true));
-            case SURROGATE -> switch (inspection.route()) {
+            case SURROGATE, SURROGATE_MODEL -> switch (inspection.route()) {
                 case CLOUD -> Optional.of(prompt);
                 case SURROGATE -> Optional.of(text(inspection.request()));
                 case LOCAL, BLOCK -> Optional.empty();
@@ -46,14 +48,21 @@ public enum Strategy {
      * True when the user gets no answer at all, because the guardian blocked the request.
      */
     public boolean blocked(Inspection inspection) {
-        return this == SURROGATE && inspection.route() == Route.BLOCK;
+        return (this == SURROGATE || this == SURROGATE_MODEL) && inspection.route() == Route.BLOCK;
     }
 
     /**
      * True when the guardian is on the request's path, so its time counts towards the latency.
      */
     public boolean guarded() {
-        return this == MASK || this == PLACEHOLDER || this == SURROGATE;
+        return this != NONE && this != LOCAL;
+    }
+
+    /**
+     * True when the strategy is judged on the verdict of the guardian with the decision model.
+     */
+    public boolean withModel() {
+        return this == SURROGATE_MODEL;
     }
 
     /**
@@ -69,7 +78,7 @@ public enum Strategy {
                 }
                 yield restored;
             }
-            case SURROGATE -> new SurrogateRestorer(inspection.substitutions()).restore(answer);
+            case SURROGATE, SURROGATE_MODEL -> new SurrogateRestorer(inspection.substitutions()).restore(answer);
         };
     }
 

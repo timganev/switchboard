@@ -3,7 +3,7 @@ package io.github.timganev.switchboard.guardian.events;
 import io.github.timganev.switchboard.commons.Topics;
 import io.github.timganev.switchboard.commons.event.PrivacyDecisionMade;
 import io.github.timganev.switchboard.commons.kafka.EventPublisher;
-import io.github.timganev.switchboard.commons.privacy.Inspection;
+import io.github.timganev.switchboard.guardian.DecisionSlot;
 import io.github.timganev.switchboard.guardian.detect.Detector;
 import org.springframework.stereotype.Component;
 
@@ -27,16 +27,16 @@ public class DecisionEvents {
         this.clock = clock;
     }
 
-    public void decided(String callId, String sessionId, Inspection inspection) {
+    public void decided(String callId, String sessionId, DecisionSlot.Decision decision) {
         String id = callId == null ? UUID.randomUUID().toString() : callId;
         publisher.publish(Topics.PRIVACY_DECISION_MADE, id, new PrivacyDecisionMade(
                 id,
                 sessionId,
-                inspection.route(),
-                inspection.reasons(),
+                decision.inspection().route(),
+                decision.inspection().reasons(),
                 Map.of("detector", Detector.VERSION),
-                null,
-                false,
+                decision.model(),
+                decision.escalatedByModel(),
                 false,
                 List.of(),
                 Instant.now(clock)));

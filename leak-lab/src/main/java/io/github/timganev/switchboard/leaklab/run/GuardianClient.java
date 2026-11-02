@@ -7,23 +7,25 @@ import io.github.timganev.switchboard.commons.chat.Role;
 import io.github.timganev.switchboard.commons.chat.TextPart;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
 
 /**
- * Asks the real guardian what it would let out, the same way the gateway does.
+ * Asks the real guardian what it would let out, the same way the gateway does; without a URL it is not configured.
  */
-@Component
-class GuardianClient {
+public class GuardianClient {
 
     private static final String TEAM = "leak-lab";
 
     private final RestClient guardianRestClient;
 
-    GuardianClient(RestClient guardianRestClient) {
+    public GuardianClient(RestClient guardianRestClient) {
         this.guardianRestClient = guardianRestClient;
+    }
+
+    boolean available() {
+        return guardianRestClient != null;
     }
 
     Inspection inspect(String prompt) {

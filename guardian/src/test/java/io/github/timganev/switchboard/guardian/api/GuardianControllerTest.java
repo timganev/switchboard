@@ -1,8 +1,11 @@
 package io.github.timganev.switchboard.guardian.api;
 
 import io.github.timganev.switchboard.commons.Route;
+import io.github.timganev.switchboard.guardian.DecisionSlot;
 import io.github.timganev.switchboard.guardian.Guardian;
 import io.github.timganev.switchboard.guardian.GuardianProperties;
+import io.github.timganev.switchboard.guardian.decision.DecisionModelProperties;
+import io.github.timganev.switchboard.guardian.decision.NoDecisionModel;
 import io.github.timganev.switchboard.guardian.detect.Detector;
 import io.github.timganev.switchboard.guardian.events.DecisionEvents;
 import io.github.timganev.switchboard.guardian.surrogate.SurrogateFactory;
@@ -53,7 +56,7 @@ class GuardianControllerTest {
                 .andExpect(jsonPath("$.request.messages[0].parts[0].text").value(not("EGN 7501020018")))
                 .andExpect(jsonPath("$.substitutions[0].type").value("EGN"));
 
-        verify(decisionEvents).decided(eq("call-1"), eq("session-1"), argThat(inspection -> inspection.route() == Route.SURROGATE));
+        verify(decisionEvents).decided(eq("call-1"), eq("session-1"), argThat(decision -> decision.inspection().route() == Route.SURROGATE && !decision.escalatedByModel()));
     }
 
     @Test
@@ -78,6 +81,11 @@ class GuardianControllerTest {
         Guardian guardian() {
             return new Guardian(new Detector(), new SurrogateFactory(),
                     new GuardianProperties("a-test-secret-that-is-long-enough!", Map.of()));
+        }
+
+        @Bean
+        DecisionSlot decisionSlot(Guardian guardian) {
+            return new DecisionSlot(guardian, new NoDecisionModel(), new DecisionModelProperties(null, null, null, null, null, null));
         }
     }
 }

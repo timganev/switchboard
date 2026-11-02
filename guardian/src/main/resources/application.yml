@@ -17,3 +17,12 @@ switchboard:
     # The surrogate secret comes from SWITCHBOARD_GUARDIAN_SECRET; the guardian does not start without it.
     policy:
       PRIVATE_KEY: BLOCK
+    # Off by default; a local model can look for names and health data the detectors cannot find.
+    decision-model:
+      type: none
+      # type: local
+      # url: http://localhost:11434
+      # model: qwen3.6:35b-a3b
+      # reasoning-effort: low
+      # timeout: 60s
+      # route: LOCAL

@@ -4,3 +4,4 @@ target/
 .vscode/
 .DS_Store
 .env
+leak-lab-runs/

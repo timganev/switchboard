@@ -40,8 +40,8 @@ import static org.mockito.Mockito.when;
 
 class LeakLabTest {
 
-    private static final LeakLabProperties PROPERTIES = new LeakLabProperties(null, null, null, null, null,
-            new LeakLabProperties.Price(BigDecimal.valueOf(3), BigDecimal.valueOf(15)), 42, 8, 4);
+    private static final LeakLabProperties PROPERTIES = new LeakLabProperties(null, null, null, null, null, null,
+            new LeakLabProperties.Price(BigDecimal.valueOf(3), BigDecimal.valueOf(15)), 42, 8, 4, null);
 
     private final List<Person> population = Population.generate(8, 42);
     private final List<LeakCase> cases = Dataset.of(population);
@@ -75,7 +75,8 @@ class LeakLabTest {
         });
         List<Integer> done = new ArrayList<>();
 
-        Map<Strategy, Score> scores = new LeakLab(guardian, attacker, cloud, local, judge, PROPERTIES).run(8, done::add).stream()
+        Map<Strategy, Score> scores = new LeakLab(guardian, new GuardianClient(null), attacker, cloud, local, judge, PROPERTIES)
+                .run(8, done::add).stream()
                 .collect(Collectors.toMap(Score::strategy, Function.identity()));
 
         assertThat(done).containsExactly(1, 2, 3, 4, 5, 6, 7, 8);
@@ -105,9 +106,41 @@ class LeakLabTest {
         assertThat(scores.get(Strategy.NONE).meanLatencyMs()).isEqualTo(200);
         assertThat(scores.get(Strategy.MASK).meanLatencyMs()).isGreaterThanOrEqualTo(200);
         assertThat(scores.get(Strategy.LOCAL).meanLatencyMs()).isEqualTo(900);
+        // Without a guardian that has the decision model, its strategy is left out.
+        assertThat(scores).doesNotContainKey(Strategy.SURROGATE_MODEL);
         // Nothing leaves under LOCAL, so there is nothing to attack; the judge sees every case once.
         verify(attacker, times(8 * 4)).identify(anyString(), anyList());
         verify(judge, times(8)).grade(anyString(), anyList());
+    }
+
+    @Test
+    void shouldScoreTheGuardianWithTheDecisionModelOnItsOwnVerdict() {
+        GuardianClient guardian = mock(GuardianClient.class);
+        cases.forEach(leakCase -> when(guardian.inspect(leakCase.prompt())).thenReturn(surrogated(leakCase)));
+        // The decision model keeps every named prompt local.
+        GuardianClient guardianWithModel = mock(GuardianClient.class);
+        when(guardianWithModel.available()).thenReturn(true);
+        cases.forEach(leakCase -> when(guardianWithModel.inspect(leakCase.prompt())).thenReturn(leakCase.named()
+                ? new Inspection(Route.LOCAL, List.of(), request(leakCase.prompt()), null)
+                : surrogated(leakCase)));
+        Attacker attacker = mock(Attacker.class);
+        when(attacker.identify(anyString(), anyList())).thenAnswer(invocation -> {
+            String outbound = invocation.getArgument(0);
+            List<Person> candidates = invocation.getArgument(1);
+            return candidates.stream().filter(person -> outbound.contains(person.name())).map(Person::id).findFirst();
+        });
+        Judge judge = mock(Judge.class);
+        when(judge.grade(anyString(), anyList())).thenReturn(Map.of());
+
+        Map<Strategy, Score> scores = new LeakLab(guardian, guardianWithModel, attacker, echo(Duration.ofMillis(200)), echo(Duration.ofMillis(900)),
+                judge, PROPERTIES).run(8, done -> { }).stream()
+                .collect(Collectors.toMap(Score::strategy, Function.identity()));
+
+        assertThat(scores.get(Strategy.SURROGATE).reidentified()).isEqualTo(4);
+        assertThat(scores.get(Strategy.SURROGATE_MODEL).reidentified()).isZero();
+        // Half the prompts stayed local: no cloud tokens for them, and the local model's time.
+        assertThat(scores.get(Strategy.SURROGATE_MODEL).cloudCostUsd()).isEqualByComparingTo(scores.get(Strategy.SURROGATE).cloudCostUsd().divide(BigDecimal.TWO));
+        assertThat(scores.get(Strategy.SURROGATE_MODEL).meanLatencyMs()).isGreaterThanOrEqualTo(550);
     }
 
     private static ModelClient echo(Duration took) {

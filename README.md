@@ -147,6 +147,31 @@ Models rewrite values: an EGN with dashes between the digits, an IBAN in lower c
 a phone number with `0` instead of `+359`. Restore finds a surrogate written with spaces, dots or
 dashes and in any letter case, and puts the real value back in the model's spacing.
 
+### The decision model slot
+
+Patterns find identifiers, not names or health data. The guardian can ask a local model about those,
+after the detectors and only when the answer could still tighten the route (`CLOUD` or `SURROGATE`).
+There is no cloud option: asking a cloud model whether a prompt is sensitive would already send it
+out. The model names a category and quotes the words that prove it (`NAME: Anna Georgieva`,
+`HEALTH: follow-up visit`); a claim whose words are not in the text is dropped, and a name must be
+capitalised words, not a role like "the customer". A finding keeps the request `LOCAL` (or `BLOCK`),
+because there are no values to swap for surrogates. A timeout or an answer that is not an answer
+counts as a finding. The trace records which model and prompt version took part and whether the model
+tightened the verdict. The slot is off by default:
+
+```yaml
+switchboard.guardian.decision-model:
+  type: local                     # none (default) or local; there is no cloud type
+  url: http://localhost:11434
+  model: qwen3.6:35b-a3b
+  reasoning-effort: low
+  timeout: 60s
+  route: LOCAL                    # LOCAL or BLOCK
+```
+
+Without thinking, `qwen3.6:35b-a3b` called a town a name and a job health data; with a little thinking
+it was right on the same prompts, at about 20 seconds a check. That trade-off is what Leak Lab measures.
+
 ### The in-flight board
 
 Redis has exactly one job: a shared board of how many requests each model instance is working on
@@ -393,6 +418,24 @@ curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
   -d '{"model": "qwen36", "messages": [{"role": "USER", "parts": [{"type": "text", "text": "Risks for EGN 7501020018?"}]}]}'
 ```
 
+Leak Lab against the real guardian, with the decision model and without. It needs
+[Ollama](https://ollama.com) 0.32 or newer (for `reasoning_effort`) and `ollama pull qwen3.6:35b-a3b`; any
+OpenAI-compatible model works, see `leak-lab/src/main/resources/application.yml`. A run of 20 cases takes
+one to two hours, so keep the machine awake. Finished runs are saved to `leak-lab-runs/` and loaded again
+at start.
+
+```bash
+ollama serve &
+export SWITCHBOARD_GUARDIAN_SECRET=a-long-random-secret-of-32-chars-or-more
+java -jar guardian/target/guardian-0.1.0-SNAPSHOT.jar &
+java -jar guardian/target/guardian-0.1.0-SNAPSHOT.jar --server.port=8085 \
+  --switchboard.guardian.decision-model.type=local --switchboard.guardian.decision-model.url=http://localhost:11434 \
+  --switchboard.guardian.decision-model.model=qwen3.6:35b-a3b --switchboard.guardian.decision-model.reasoning-effort=low &
+java -jar leak-lab/target/leak-lab-0.1.0-SNAPSHOT.jar --switchboard.leak-lab.guardian-with-model.url=http://localhost:8085 &
+
+curl -X POST 'localhost:8084/v1/runs?cases=20'
+```
+
 ## Roadmap
 
 - [x] **Skeleton:** all services start and report health, event contracts, fake provider, CI
@@ -422,7 +465,20 @@ curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
   - [x] Leakage and re-identification per strategy, measured against the real guardian
   - [x] Answer quality, cost and latency per strategy, and the privacy versus utility chart
   - [ ] The decision model slot, measured with and without
-- [ ] **5. Hardening:** `SKETCH`, lethal trifecta guard, Helm charts, system tests in Kubernetes, Allure reports
+  - [ ] A larger run (all 40 people, several seeds), so one case is no longer ten points
+  - [ ] A weaker local model for `LOCAL`, so its quality is measured rather than borrowed from the cloud stand-in
+  - [ ] Recall and precision of the detectors and of the decision model, and the time each adds
+  - [ ] Surrogate names instead of keeping every named prompt local, so the cloud still gets the task
+  - [ ] Runs published as an `eval-run-completed` event, and the chart on GitHub Pages
+- [ ] **5. Hardening:** what a team would need before trusting it
+  - [ ] Authentication with Keycloak (OAuth2, JWT); the team still comes from a header
+  - [ ] `SKETCH`: the cloud model drafts on de-identified text, a local model fills in the real details
+  - [ ] Lethal trifecta guard on the agent's tool list
+  - [ ] The difficulty slot in the gateway: easy tasks to a cheaper model, measured like the privacy slot
+  - [ ] Thinking models: forward or drop the `reasoning` field on purpose, and stop a thinking model from
+        spending the whole `max_tokens` before it answers
+  - [ ] The whole stack from `deploy/compose.yml` started and checked end to end
+  - [ ] Helm charts and system tests running as a Kubernetes Job, with Allure reports on GitHub Pages
 
 **To decide**
 - [ ] **Adaptive limits on top of the board.** The board counts requests, but the safe limit per

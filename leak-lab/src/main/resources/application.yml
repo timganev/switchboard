@@ -10,6 +10,9 @@ switchboard:
     guardian:
       url: http://localhost:8081
       timeout: 5s
+    # A second guardian with its decision model on; leave the url out to skip SURROGATE_MODEL.
+    guardian-with-model:
+      timeout: 2m
     # The attacker sees only what left the boundary; any OpenAI-compatible endpoint works.
     attacker:
       url: http://localhost:11434
@@ -38,3 +41,5 @@ switchboard:
     seed: 42
     population: 40
     candidates: 10
+    # Every finished run is saved here and loaded again at start.
+    results-dir: leak-lab-runs

@@ -5,7 +5,6 @@ import io.github.timganev.switchboard.leaklab.strategy.Strategy;
 import java.math.BigDecimal;
 
 /**
- * How one strategy did: what leaked and who was recognised, then how good, how costly and how slow the answers were.
  * {@code quality} is the judge's mean grade from 1 to 5; {@code cloudCostUsd} prices only the tokens that went to the cloud.
  */
 public record Score(Strategy strategy, int cases, int values, int valuesLeaked, double leakRate,

@@ -34,15 +34,17 @@ public class LeakLab {
     private static final int ANSWER_TOKENS = 1500;
 
     private final GuardianClient guardian;
+    private final GuardianClient guardianWithModel;
     private final Attacker attacker;
     private final ModelClient cloudModel;
     private final ModelClient localModel;
     private final Judge judge;
     private final LeakLabProperties properties;
 
-    LeakLab(GuardianClient guardian, Attacker attacker, ModelClient cloudModel, ModelClient localModel, Judge judge,
-            LeakLabProperties properties) {
+    LeakLab(GuardianClient guardian, GuardianClient guardianWithModel, Attacker attacker, ModelClient cloudModel, ModelClient localModel,
+            Judge judge, LeakLabProperties properties) {
         this.guardian = guardian;
+        this.guardianWithModel = guardianWithModel;
         this.attacker = attacker;
         this.cloudModel = cloudModel;
         this.localModel = localModel;
@@ -57,16 +59,20 @@ public class LeakLab {
     public List<Score> run(int caseCount, IntConsumer done) {
         List<Person> population = Population.generate(properties.population(), properties.seed());
         List<LeakCase> cases = Dataset.of(population).subList(0, Math.min(caseCount, population.size()));
-        List<Tally> tallies = Arrays.stream(Strategy.values()).map(Tally::new).toList();
+        List<Tally> tallies = Arrays.stream(Strategy.values())
+                .filter(strategy -> !strategy.withModel() || guardianWithModel.available())
+                .map(Tally::new)
+                .toList();
         for (int i = 0; i < cases.size(); i++) {
             LeakCase leakCase = cases.get(i);
-            long started = System.nanoTime();
-            Inspection inspection = guardian.inspect(leakCase.prompt());
-            Duration inspected = Duration.ofNanos(System.nanoTime() - started);
+            Timed plain = Timed.inspect(guardian, leakCase.prompt());
+            Timed withModel = guardianWithModel.available() ? Timed.inspect(guardianWithModel, leakCase.prompt()) : null;
             List<Person> candidates = Candidates.of(leakCase.person(), population, properties.candidates(), properties.seed());
             List<Answered> answers = new ArrayList<>();
             for (Tally tally : tallies) {
                 Strategy strategy = tally.strategy();
+                Inspection inspection = strategy.withModel() ? withModel.inspection() : plain.inspection();
+                Duration inspected = strategy.withModel() ? withModel.took() : plain.took();
                 Optional<String> outbound = strategy.outbound(leakCase.prompt(), inspection);
                 int leaked = outbound.map(text -> Leakage.leaked(text, leakCase.secrets())).orElse(0);
                 boolean reidentified = outbound.flatMap(text -> attacker.identify(text, candidates))
@@ -103,5 +109,14 @@ public class LeakLab {
     }
 
     private record Answered(Tally tally, String text) {
+    }
+
+    private record Timed(Inspection inspection, Duration took) {
+
+        static Timed inspect(GuardianClient guardian, String prompt) {
+            long started = System.nanoTime();
+            Inspection inspection = guardian.inspect(prompt);
+            return new Timed(inspection, Duration.ofNanos(System.nanoTime() - started));
+        }
     }
 }

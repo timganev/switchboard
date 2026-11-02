@@ -5,6 +5,7 @@ import io.github.timganev.switchboard.commons.chat.ChatRequest;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.commons.privacy.Restoration;
 import io.github.timganev.switchboard.commons.privacy.RestoreRequest;
+import io.github.timganev.switchboard.guardian.DecisionSlot;
 import io.github.timganev.switchboard.guardian.Guardian;
 import io.github.timganev.switchboard.guardian.events.DecisionEvents;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,10 +19,12 @@ import org.springframework.web.bind.annotation.RestController;
 class GuardianController {
 
     private final Guardian guardian;
+    private final DecisionSlot decisionSlot;
     private final DecisionEvents decisionEvents;
 
-    GuardianController(Guardian guardian, DecisionEvents decisionEvents) {
+    GuardianController(Guardian guardian, DecisionSlot decisionSlot, DecisionEvents decisionEvents) {
         this.guardian = guardian;
+        this.decisionSlot = decisionSlot;
         this.decisionEvents = decisionEvents;
     }
 
@@ -29,9 +32,9 @@ class GuardianController {
     Inspection inspect(@RequestBody ChatRequest request,
                        @RequestHeader(name = CallHeaders.CALL_ID, required = false) String callId,
                        @RequestHeader(name = CallHeaders.SESSION, required = false) String sessionId) {
-        Inspection inspection = guardian.inspect(request);
-        decisionEvents.decided(callId, sessionId, inspection);
-        return inspection;
+        DecisionSlot.Decision decision = decisionSlot.decide(request);
+        decisionEvents.decided(callId, sessionId, decision);
+        return decision.inspection();
     }
 
     @PostMapping("/restore")

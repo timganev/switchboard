@@ -2,12 +2,14 @@ package io.github.timganev.switchboard.guardian.events;
 
 import io.github.timganev.switchboard.commons.Route;
 import io.github.timganev.switchboard.commons.Topics;
+import io.github.timganev.switchboard.commons.event.DecisionModelRef;
 import io.github.timganev.switchboard.commons.event.PrivacyDecisionMade;
 import io.github.timganev.switchboard.commons.event.SensitivityReason;
 import io.github.timganev.switchboard.commons.kafka.EventPublisher;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.commons.privacy.SensitiveType;
 import io.github.timganev.switchboard.commons.privacy.Substitution;
+import io.github.timganev.switchboard.guardian.DecisionSlot;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -31,7 +33,7 @@ class DecisionEventsTest {
         Inspection inspection = new Inspection(Route.SURROGATE, List.of(new SensitivityReason("EGN", 1)), null,
                 List.of(new Substitution(SensitiveType.EGN, "7501020018", "8807143345")));
 
-        decisionEvents.decided("call-1", "s-1", inspection);
+        decisionEvents.decided("call-1", "s-1", new DecisionSlot.Decision(inspection, null, false));
 
         ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
         verify(publisher).publish(eq(Topics.PRIVACY_DECISION_MADE), eq("call-1"), event.capture());
@@ -42,5 +44,20 @@ class DecisionEventsTest {
         assertThat(decision.reasons()).containsExactly(new SensitivityReason("EGN", 1));
         assertThat(decision.detectorVersions()).containsKey("detector");
         assertThat(decision.toString()).doesNotContain("7501020018").doesNotContain("8807143345");
+        assertThat(decision.decisionModel()).isNull();
+        assertThat(decision.escalatedByModel()).isFalse();
+    }
+
+    @Test
+    void shouldNameTheDecisionModelThatTightenedTheVerdict() {
+        Inspection inspection = new Inspection(Route.LOCAL, List.of(new SensitivityReason("NAME", 1)), null, null);
+
+        decisionEvents.decided("call-2", null, new DecisionSlot.Decision(inspection, new DecisionModelRef("qwen", "1"), true));
+
+        ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
+        verify(publisher).publish(eq(Topics.PRIVACY_DECISION_MADE), eq("call-2"), event.capture());
+        PrivacyDecisionMade decision = (PrivacyDecisionMade) event.getValue();
+        assertThat(decision.decisionModel()).isEqualTo(new DecisionModelRef("qwen", "1"));
+        assertThat(decision.escalatedByModel()).isTrue();
     }
 }

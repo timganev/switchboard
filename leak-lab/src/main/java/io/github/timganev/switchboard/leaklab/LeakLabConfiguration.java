@@ -1,6 +1,7 @@
 package io.github.timganev.switchboard.leaklab;
 
 import io.github.timganev.switchboard.leaklab.model.ModelClient;
+import io.github.timganev.switchboard.leaklab.run.GuardianClient;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,8 +17,14 @@ import java.time.Duration;
 class LeakLabConfiguration {
 
     @Bean
-    RestClient guardianRestClient(RestClient.Builder builder, LeakLabProperties properties) {
-        return client(builder, properties.guardian().url(), properties.guardian().timeout());
+    GuardianClient guardian(RestClient.Builder builder, LeakLabProperties properties) {
+        return new GuardianClient(client(builder, properties.guardian().url(), properties.guardian().timeout()));
+    }
+
+    @Bean
+    GuardianClient guardianWithModel(RestClient.Builder builder, LeakLabProperties properties) {
+        LeakLabProperties.Endpoint endpoint = properties.guardianWithModel();
+        return new GuardianClient(endpoint == null || endpoint.url() == null ? null : client(builder, endpoint.url(), endpoint.timeout()));
     }
 
     @Bean

@@ -24,6 +24,12 @@
               "count": { "type": "integer" }
             }
           },
+          "decisionModel": {
+            "properties": {
+              "name": { "type": "keyword" },
+              "version": { "type": "keyword" }
+            }
+          },
           "escalatedByModel": { "type": "boolean" },
           "trifectaTriggered": { "type": "boolean" },
           "removedTools": { "type": "keyword" },

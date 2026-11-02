@@ -56,7 +56,7 @@ class StrategyTest {
 
         assertThat(Strategy.SURROGATE.blocked(blocked)).isTrue();
         assertThat(Strategy.LOCAL.blocked(blocked)).isFalse();
-        assertThat(Strategy.values()).filteredOn(Strategy::guarded).containsExactly(Strategy.MASK, Strategy.PLACEHOLDER, Strategy.SURROGATE);
+        assertThat(Strategy.values()).filteredOn(Strategy::guarded).containsExactly(Strategy.MASK, Strategy.PLACEHOLDER, Strategy.SURROGATE, Strategy.SURROGATE_MODEL);
     }
 
     private static ChatRequest request(String text) {

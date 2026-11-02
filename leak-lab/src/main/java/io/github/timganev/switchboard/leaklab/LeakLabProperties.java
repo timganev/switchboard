@@ -4,14 +4,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.math.BigDecimal;
 import java.net.URI;
+import java.nio.file.Path;
 import java.time.Duration;
 
 /**
  * {@code candidates} is how many people the attacker chooses from, so a blind guess is right once in that many cases.
  */
 @ConfigurationProperties("switchboard.leak-lab")
-public record LeakLabProperties(Endpoint guardian, Model attacker, Model judge, Model cloud, Model local, Price cloudPrice,
-                                long seed, int population, int candidates) {
+public record LeakLabProperties(Endpoint guardian, Endpoint guardianWithModel, Model attacker, Model judge, Model cloud, Model local,
+                                Price cloudPrice, long seed, int population, int candidates, Path resultsDir) {
 
     public LeakLabProperties {
         if (candidates < 2 || candidates > population) {
