@@ -8,7 +8,8 @@ decides where the request may go, sends it there, and records why.
 
 > **Status:** the gateway, the guardian, the ledger and the trace work: both APIs, streaming, the
 > in-flight board, surrogates and restore, events, budgets reconciled with the bill, masked traces
-> and the live view. Leak Lab is next (see [Roadmap](#roadmap)).
+> and the live view. Leak Lab measures leakage, re-identification, answer quality, cost and latency per
+> strategy; the decision model slot is next (see [Roadmap](#roadmap)).
 
 ## Principles
 
@@ -254,10 +255,9 @@ curl -X POST localhost:8083/v1/dead-letters/redrive # {"records": 2}
 A second model receives exactly what left the boundary and tries to recover what was hidden or to
 re-identify the person from what is left (age, job and town are often enough). Every strategy, from
 no protection through placeholders and surrogates to `LOCAL`, is scored on four numbers: leakage,
-answer quality, cost and latency. The goal is a privacy versus utility chart in this README, backed
-by a reproducible run.
+answer quality, cost and latency, and the trade-off is drawn as a chart from a reproducible run.
 
-The first part measures leakage. A made-up population (EGN and IBAN pass the real check digits; the
+A made-up population (EGN and IBAN pass the real check digits; the
 same seed always gives the same people) gives one prompt per person: a loan application, a complaint,
 an HR note, a patient note. Every other prompt leaves the name out, so only the town, the job and the
 EGN point to the person. Each prompt goes through the real guardian once, and each strategy decides
@@ -276,20 +276,32 @@ the right person when it gets only what left and ten candidates who look most li
 blind guess is right 10% of the time). The attacker is any OpenAI-compatible model, by default the
 local `qwen3.6:35b-a3b`.
 
+Then the user's side. Each strategy's prompt is answered (by the cloud model, or by the local one
+when nothing may leave), and the answer is turned back into what the user would see: placeholders and
+surrogates are replaced by the real values, masks stay masks. A trusted judge model sees the original
+request and grades all five answers side by side, in a shuffled order, from 1 to 5. Cost prices only
+the tokens that went to the cloud; latency includes the guardian where it is on the path. In this run
+one local model stands in for both the cloud and the local model, so the answers differ only by what
+each strategy sent, and the price is the ledger's fallback of 3 and 15 USD per million tokens.
+
 ```bash
 curl -X POST 'localhost:8084/v1/runs?cases=20'   # runs in the background
 curl localhost:8084/v1/runs/<run id>
+curl localhost:8084/v1/runs/<run id>/chart.svg
 ```
 
-First run: 20 prompts, 50 real values, attacker `qwen3.6:35b-a3b`, seed 42.
+Run of 2 November 2026: 20 prompts, 50 real values, seed 42, `qwen3.6:35b-a3b` as attacker and judge
+(thinking) and as both answer models (no thinking); 80 minutes on an Apple Silicon laptop.
 
-| Strategy | Real values that left | Right person named | Without the name in the prompt |
-|---|---|---|---|
-| `NONE` | 50 of 50 | 20 of 20 | 10 of 10 |
-| `MASK` | 0 | 15 of 20 | 5 of 10 |
-| `PLACEHOLDER` | 0 | 15 of 20 | 5 of 10 |
-| `SURROGATE` | 0 | 13 of 20 | 4 of 10 |
-| `LOCAL` | 0 | 0 | 0 |
+| Strategy | Real values that left | Right person named | Without the name | Answer quality | Cloud cost | Mean latency |
+|---|---|---|---|---|---|---|
+| `NONE` | 50 of 50 | 20 of 20 | 10 of 10 | 4.8 | $0.098 | 6.2 s |
+| `MASK` | 0 | 15 of 20 | 5 of 10 | 3.35 | $0.074 | 4.8 s |
+| `PLACEHOLDER` | 0 | 16 of 20 | 6 of 10 | 4.6 | $0.077 | 4.9 s |
+| `SURROGATE` | 0 | 12 of 20 | 3 of 10 | 4.6 | $0.095 | 6.0 s |
+| `LOCAL` | 0 | 0 | 0 | 4.8 | $0 | 6.1 s |
+
+![Answer quality against people re-identified, per strategy](docs/leak-lab-tradeoff.svg)
 
 What it says, with only 20 cases behind it:
 
@@ -298,7 +310,16 @@ What it says, with only 20 cases behind it:
 - Names are the guardian's biggest gap: it finds identifiers, not names, so a named prompt is
   recognised under every strategy that sends anything (10 of 10 with masks, 9 of 10 with surrogates).
 - Surrogates did a little better than masks because a fake EGN carries a fake date of birth, which
-  points the attacker the wrong way. One case is ten points here, so this needs a larger run.
+  points the attacker the wrong way. One case is ten points here, so this needs a larger run: the
+  first run of the same set gave 13 of 20 for surrogates and 15 for placeholders, so the attacker
+  moves by a case or two between runs even at temperature 0.
+- Masks cost answer quality (3.35 against 4.8): the answer keeps `***` where the user needed the
+  phone or the EGN. Placeholders and surrogates come back as real values and lose almost nothing.
+- Cost and latency follow the length of the answer, not the strategy: the guardian adds milliseconds,
+  and a masked prompt gets a shorter, cheaper and worse answer. Surrogates cost what no protection
+  costs, because the prompt looks just as real.
+- `LOCAL` wins on paper only because the same model answers. With a weaker local model its quality
+  is the number to watch; that is the trade-off the decision model slot is for.
 
 ## Repository layout
 
@@ -399,7 +420,7 @@ curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
   - [x] Reconciling the estimate with the provider's bill
 - [ ] **4. Leak Lab and the decision model slot:** leakage, quality, cost and latency per strategy
   - [x] Leakage and re-identification per strategy, measured against the real guardian
-  - [ ] Answer quality, cost and latency per strategy, and the privacy versus utility chart
+  - [x] Answer quality, cost and latency per strategy, and the privacy versus utility chart
   - [ ] The decision model slot, measured with and without
 - [ ] **5. Hardening:** `SKETCH`, lethal trifecta guard, Helm charts, system tests in Kubernetes, Allure reports
 

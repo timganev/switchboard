@@ -41,6 +41,24 @@ class StrategyTest {
         assertThatIllegalStateException().isThrownBy(() -> Strategy.MASK.outbound(PROMPT, local));
     }
 
+    @Test
+    void shouldGiveTheUserBackEveryValueButTheMaskedOnes() {
+        assertThat(Strategy.MASK.restored("Call *** today.", SURROGATED)).isEqualTo("Call *** today.");
+        assertThat(Strategy.PLACEHOLDER.restored("Call [PHONE_2], not [PHONE_1].", SURROGATED))
+                .isEqualTo("Call 0887 654 321, not +359 88 123 4567.");
+        assertThat(Strategy.SURROGATE.restored("Call 0889 111 222 about 8807143345.", SURROGATED))
+                .isEqualTo("Call 0887 654 321 about 7501020018.");
+    }
+
+    @Test
+    void shouldCountTheGuardianOnlyWhereItIsOnThePath() {
+        Inspection blocked = new Inspection(Route.BLOCK, List.of(), null, null);
+
+        assertThat(Strategy.SURROGATE.blocked(blocked)).isTrue();
+        assertThat(Strategy.LOCAL.blocked(blocked)).isFalse();
+        assertThat(Strategy.values()).filteredOn(Strategy::guarded).containsExactly(Strategy.MASK, Strategy.PLACEHOLDER, Strategy.SURROGATE);
+    }
+
     private static ChatRequest request(String text) {
         return new ChatRequest("m", null, List.of(new ChatMessage(Role.USER, List.of(new TextPart(text)))), null, null, null);
     }

@@ -2,6 +2,7 @@ package io.github.timganev.switchboard.leaklab.api;
 
 import io.github.timganev.switchboard.leaklab.run.LeakRun;
 import io.github.timganev.switchboard.leaklab.run.Runs;
+import io.github.timganev.switchboard.leaklab.run.TradeoffChart;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +32,13 @@ class RunController {
     @GetMapping("/{id}")
     ResponseEntity<LeakRun> run(@PathVariable String id) {
         return ResponseEntity.of(runs.find(id));
+    }
+
+    @GetMapping(value = "/{id}/chart.svg", produces = "image/svg+xml")
+    ResponseEntity<String> chart(@PathVariable String id) {
+        return ResponseEntity.of(runs.find(id)
+                .filter(run -> run.status() == LeakRun.Status.DONE)
+                .map(run -> TradeoffChart.svg(run.scores(), run.chance())));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

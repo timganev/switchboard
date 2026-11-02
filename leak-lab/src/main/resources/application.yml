@@ -15,6 +15,26 @@ switchboard:
       url: http://localhost:11434
       model: qwen3.6:35b-a3b
       timeout: 5m
+    # The judge is trusted: it sees the original request and grades every answer to it.
+    judge:
+      url: http://localhost:11434
+      model: qwen3.6:35b-a3b
+      timeout: 10m
+    # The same model stands in for the cloud, so answers differ only by what each strategy sent.
+    cloud:
+      url: http://localhost:11434
+      model: qwen3.6:35b-a3b
+      timeout: 5m
+      reasoning-effort: none
+    local:
+      url: http://localhost:11434
+      model: qwen3.6:35b-a3b
+      timeout: 5m
+      reasoning-effort: none
+    # The same fallback price the ledger charges for a cloud model.
+    cloud-price:
+      input-usd-per-million: 3
+      output-usd-per-million: 15
     seed: 42
     population: 40
     candidates: 10

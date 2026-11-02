@@ -6,8 +6,10 @@ import io.github.timganev.switchboard.commons.chat.TextPart;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.commons.privacy.SensitiveType;
 import io.github.timganev.switchboard.commons.privacy.Substitution;
+import io.github.timganev.switchboard.commons.privacy.SurrogateRestorer;
 
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -40,17 +42,59 @@ public enum Strategy {
         };
     }
 
+    /**
+     * True when the user gets no answer at all, because the guardian blocked the request.
+     */
+    public boolean blocked(Inspection inspection) {
+        return this == SURROGATE && inspection.route() == Route.BLOCK;
+    }
+
+    /**
+     * True when the guardian is on the request's path, so its time counts towards the latency.
+     */
+    public boolean guarded() {
+        return this == MASK || this == PLACEHOLDER || this == SURROGATE;
+    }
+
+    /**
+     * The answer as the user receives it; masked values are lost, the others go back in.
+     */
+    public String restored(String answer, Inspection inspection) {
+        return switch (this) {
+            case NONE, MASK, LOCAL -> answer;
+            case PLACEHOLDER -> {
+                String restored = answer;
+                for (Map.Entry<String, String> placeholder : placeholders(inspection).entrySet()) {
+                    restored = restored.replace(placeholder.getValue(), placeholder.getKey());
+                }
+                yield restored;
+            }
+            case SURROGATE -> new SurrogateRestorer(inspection.substitutions()).restore(answer);
+        };
+    }
+
     private static String replaced(String prompt, Inspection inspection, boolean numbered) {
         if (inspection.route() != Route.CLOUD && inspection.route() != Route.SURROGATE) {
             throw new IllegalStateException("The guardian chose " + inspection.route() + ", so there are no findings to mask");
         }
-        Map<SensitiveType, Integer> counts = new EnumMap<>(SensitiveType.class);
         String replaced = prompt;
-        for (Substitution substitution : inspection.substitutions()) {
-            int number = counts.merge(substitution.type(), 1, Integer::sum);
-            replaced = replaced.replace(substitution.value(), numbered ? "[" + substitution.type() + "_" + number + "]" : "***");
+        for (Map.Entry<String, String> placeholder : placeholders(inspection).entrySet()) {
+            replaced = replaced.replace(placeholder.getKey(), numbered ? placeholder.getValue() : "***");
         }
         return replaced;
+    }
+
+    // Real value to placeholder, numbered per type in the order the guardian found them.
+    private static Map<String, String> placeholders(Inspection inspection) {
+        Map<SensitiveType, Integer> counts = new EnumMap<>(SensitiveType.class);
+        Map<String, String> placeholders = new LinkedHashMap<>();
+        for (Substitution substitution : inspection.substitutions()) {
+            if (!placeholders.containsKey(substitution.value())) {
+                int number = counts.merge(substitution.type(), 1, Integer::sum);
+                placeholders.put(substitution.value(), "[" + substitution.type() + "_" + number + "]");
+            }
+        }
+        return placeholders;
     }
 
     private static String text(ChatRequest request) {

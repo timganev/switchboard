@@ -1,15 +1,13 @@
 package io.github.timganev.switchboard.leaklab.attack;
 
-import io.github.timganev.switchboard.leaklab.LeakLabProperties;
 import io.github.timganev.switchboard.leaklab.dataset.Person;
 import io.github.timganev.switchboard.leaklab.dataset.Population;
+import io.github.timganev.switchboard.leaklab.model.ModelClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-import java.net.URI;
-import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,10 +37,8 @@ class AttackerTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("EGN ***")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString(candidates.get(1).name())))
                 .andRespond(withSuccess("{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"P02\"}}]}", MediaType.APPLICATION_JSON));
-        LeakLabProperties properties = new LeakLabProperties(null,
-                new LeakLabProperties.Attacker(URI.create("http://attacker"), "attacker-model", Duration.ofSeconds(1)), 42, 3, 3);
 
-        assertThat(new Attacker(builder.build(), properties).identify("A nurse from Varna, EGN ***", candidates)).contains("P02");
+        assertThat(new Attacker(new ModelClient(builder.build(), "attacker-model", null)).identify("A nurse from Varna, EGN ***", candidates)).contains("P02");
         server.verify();
     }
 }

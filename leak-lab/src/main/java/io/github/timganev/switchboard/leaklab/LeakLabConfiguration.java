@@ -1,5 +1,6 @@
 package io.github.timganev.switchboard.leaklab;
 
+import io.github.timganev.switchboard.leaklab.model.ModelClient;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,8 +21,27 @@ class LeakLabConfiguration {
     }
 
     @Bean
-    RestClient attackerRestClient(RestClient.Builder builder, LeakLabProperties properties) {
-        return client(builder, properties.attacker().url(), properties.attacker().timeout());
+    ModelClient attackerModel(RestClient.Builder builder, LeakLabProperties properties) {
+        return model(builder, properties.attacker());
+    }
+
+    @Bean
+    ModelClient judgeModel(RestClient.Builder builder, LeakLabProperties properties) {
+        return model(builder, properties.judge());
+    }
+
+    @Bean
+    ModelClient cloudModel(RestClient.Builder builder, LeakLabProperties properties) {
+        return model(builder, properties.cloud());
+    }
+
+    @Bean
+    ModelClient localModel(RestClient.Builder builder, LeakLabProperties properties) {
+        return model(builder, properties.local());
+    }
+
+    private static ModelClient model(RestClient.Builder builder, LeakLabProperties.Model model) {
+        return new ModelClient(client(builder, model.url(), model.timeout()), model.model(), model.reasoningEffort());
     }
 
     private static RestClient client(RestClient.Builder builder, URI url, Duration timeout) {

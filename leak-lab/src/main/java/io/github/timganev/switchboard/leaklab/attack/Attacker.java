@@ -1,12 +1,8 @@
 package io.github.timganev.switchboard.leaklab.attack;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import io.github.timganev.switchboard.leaklab.LeakLabProperties;
 import io.github.timganev.switchboard.leaklab.dataset.Person;
-import org.springframework.http.MediaType;
+import io.github.timganev.switchboard.leaklab.model.ModelClient;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
-import tools.jackson.databind.JsonNode;
 
 import java.util.List;
 import java.util.Optional;
@@ -25,23 +21,14 @@ public class Attacker {
     // Reasoning models spend tokens thinking before they answer.
     private static final int MAX_TOKENS = 4000;
 
-    private final RestClient attackerRestClient;
-    private final String model;
+    private final ModelClient attackerModel;
 
-    public Attacker(RestClient attackerRestClient, LeakLabProperties properties) {
-        this.attackerRestClient = attackerRestClient;
-        this.model = properties.attacker().model();
+    public Attacker(ModelClient attackerModel) {
+        this.attackerModel = attackerModel;
     }
 
     public Optional<String> identify(String outbound, List<Person> candidates) {
-        Completion request = new Completion(model, List.of(new Message("user", prompt(outbound, candidates))), 0.0, MAX_TOKENS);
-        JsonNode answer = attackerRestClient.post()
-                .uri("/v1/chat/completions")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .retrieve()
-                .body(JsonNode.class);
-        return chosen(answer == null ? "" : answer.path("choices").path(0).path("message").path("content").asString(), candidates);
+        return chosen(attackerModel.complete(prompt(outbound, candidates), MAX_TOKENS).text(), candidates);
     }
 
     // The last id that is really a candidate: a model may mention others while it explains.
@@ -76,11 +63,5 @@ public class Attacker {
                 Which person is the message about? Use every clue: names, the date of birth inside a Bulgarian EGN (the first six \
                 digits are YYMMDD, with 40 added to the month for births from 2000), the town and the job. Reply with one line: \
                 the person's id, or NONE if you cannot tell.""".formatted(outbound, people);
-    }
-
-    record Completion(String model, List<Message> messages, double temperature, @JsonProperty("max_tokens") int maxTokens) {
-    }
-
-    record Message(String role, String content) {
     }
 }
