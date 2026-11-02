@@ -4,3 +4,17 @@ spring:
 
 server:
   port: 8084
+
+switchboard:
+  leak-lab:
+    guardian:
+      url: http://localhost:8081
+      timeout: 5s
+    # The attacker sees only what left the boundary; any OpenAI-compatible endpoint works.
+    attacker:
+      url: http://localhost:11434
+      model: qwen3.6:35b-a3b
+      timeout: 5m
+    seed: 42
+    population: 40
+    candidates: 10

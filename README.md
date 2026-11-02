@@ -257,6 +257,49 @@ no protection through placeholders and surrogates to `LOCAL`, is scored on four 
 answer quality, cost and latency. The goal is a privacy versus utility chart in this README, backed
 by a reproducible run.
 
+The first part measures leakage. A made-up population (EGN and IBAN pass the real check digits; the
+same seed always gives the same people) gives one prompt per person: a loan application, a complaint,
+an HR note, a patient note. Every other prompt leaves the name out, so only the town, the job and the
+EGN point to the person. Each prompt goes through the real guardian once, and each strategy decides
+what leaves:
+
+| Strategy | What leaves |
+|---|---|
+| `NONE` | the prompt as it is |
+| `MASK` | what the guardian found, replaced by `***` |
+| `PLACEHOLDER` | what the guardian found, replaced by `[EGN_1]`, `[PHONE_1]`… |
+| `SURROGATE` | what the guardian really sends: realistic fake values |
+| `LOCAL` | nothing |
+
+Two numbers per strategy: the share of real values that left, and how often an attacker model names
+the right person when it gets only what left and ten candidates who look most like that person (a
+blind guess is right 10% of the time). The attacker is any OpenAI-compatible model, by default the
+local `qwen3.6:35b-a3b`.
+
+```bash
+curl -X POST 'localhost:8084/v1/runs?cases=20'   # runs in the background
+curl localhost:8084/v1/runs/<run id>
+```
+
+First run: 20 prompts, 50 real values, attacker `qwen3.6:35b-a3b`, seed 42.
+
+| Strategy | Real values that left | Right person named | Without the name in the prompt |
+|---|---|---|---|
+| `NONE` | 50 of 50 | 20 of 20 | 10 of 10 |
+| `MASK` | 0 | 15 of 20 | 5 of 10 |
+| `PLACEHOLDER` | 0 | 15 of 20 | 5 of 10 |
+| `SURROGATE` | 0 | 13 of 20 | 4 of 10 |
+| `LOCAL` | 0 | 0 | 0 |
+
+What it says, with only 20 cases behind it:
+
+- Hiding the identifiers is not hiding the person. With no real value left, the town and the job were
+  still enough for the right person half of the time, five times a blind guess.
+- Names are the guardian's biggest gap: it finds identifiers, not names, so a named prompt is
+  recognised under every strategy that sends anything (10 of 10 with masks, 9 of 10 with surrogates).
+- Surrogates did a little better than masks because a fake EGN carries a fake date of birth, which
+  points the attacker the wrong way. One case is ten points here, so this needs a larger run.
+
 ## Repository layout
 
 ```
@@ -355,6 +398,9 @@ curl localhost:8081/v1/inspect -H 'Content-Type: application/json' \
   - [x] Redrive endpoint for dead letters
   - [x] Reconciling the estimate with the provider's bill
 - [ ] **4. Leak Lab and the decision model slot:** leakage, quality, cost and latency per strategy
+  - [x] Leakage and re-identification per strategy, measured against the real guardian
+  - [ ] Answer quality, cost and latency per strategy, and the privacy versus utility chart
+  - [ ] The decision model slot, measured with and without
 - [ ] **5. Hardening:** `SKETCH`, lethal trifecta guard, Helm charts, system tests in Kubernetes, Allure reports
 
 **To decide**

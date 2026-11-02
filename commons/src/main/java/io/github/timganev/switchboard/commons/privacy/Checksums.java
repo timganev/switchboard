@@ -1,4 +1,4 @@
-package io.github.timganev.switchboard.guardian.detect;
+package io.github.timganev.switchboard.commons.privacy;
 
 import java.math.BigInteger;
 import java.time.DateTimeException;
