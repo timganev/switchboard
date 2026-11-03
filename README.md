@@ -152,8 +152,9 @@ dashes and in any letter case, and puts the real value back in the model's spaci
 Patterns find identifiers, not names or health data. The guardian can ask a local model about those,
 after the detectors and only when the answer could still tighten the route (`CLOUD` or `SURROGATE`).
 There is no cloud option: asking a cloud model whether a prompt is sensitive would already send it
-out. The model names a category and quotes the words that prove it (`NAME: Anna Georgieva`,
-`HEALTH: follow-up visit`); a claim whose words are not in the text is dropped, and a name must be
+out. The model answers in JSON that the server holds to a schema, with the words that prove each
+category (`{"names": ["Anna Georgieva"], "health": ["follow-up visit"]}`), so it cannot reason in prose
+before it answers. A claim whose words are not in the text is dropped, and a name must be
 capitalised words, not a role like "the customer". A finding keeps the request `LOCAL` (or `BLOCK`),
 because there are no values to swap for surrogates. A timeout or an answer that is not an answer
 counts as a finding. The trace records which model and prompt version took part and whether the model
@@ -164,13 +165,15 @@ switchboard.guardian.decision-model:
   type: local                     # none (default) or local; there is no cloud type
   url: http://localhost:11434
   model: qwen3.6:35b-a3b
-  reasoning-effort: low
-  timeout: 60s
+  reasoning-effort: none
+  timeout: 10s
   route: LOCAL                    # LOCAL or BLOCK
 ```
 
-Without thinking, `qwen3.6:35b-a3b` called a town a name and a job health data; with a little thinking
-it was right on the same prompts, at about 20 seconds a check. That trade-off is what Leak Lab measures.
+The first version asked for free text. Without thinking, `qwen3.6:35b-a3b` then called a town a name and
+a job health data, and with a little thinking it was right at about 20 seconds a check. With the JSON
+schema and no thinking it made the same decisions on the 20 Leak Lab prompts in about 1 second a check
+(prompt version 2). The published run below used the first version.
 
 ### The in-flight board
 
@@ -443,7 +446,7 @@ export SWITCHBOARD_GUARDIAN_SECRET=a-long-random-secret-of-32-chars-or-more
 java -jar guardian/target/guardian-0.1.0-SNAPSHOT.jar &
 java -jar guardian/target/guardian-0.1.0-SNAPSHOT.jar --server.port=8085 \
   --switchboard.guardian.decision-model.type=local --switchboard.guardian.decision-model.url=http://localhost:11434 \
-  --switchboard.guardian.decision-model.model=qwen3.6:35b-a3b --switchboard.guardian.decision-model.reasoning-effort=low &
+  --switchboard.guardian.decision-model.model=qwen3.6:35b-a3b --switchboard.guardian.decision-model.reasoning-effort=none &
 java -jar leak-lab/target/leak-lab-0.1.0-SNAPSHOT.jar --switchboard.leak-lab.guardian-with-model.url=http://localhost:8085 &
 
 curl -X POST 'localhost:8084/v1/runs?cases=20'
@@ -478,8 +481,9 @@ curl -X POST 'localhost:8084/v1/runs?cases=20'
   - [x] Leakage and re-identification per strategy, measured against the real guardian
   - [x] Answer quality, cost and latency per strategy, and the privacy versus utility chart
   - [x] The decision model slot, measured with and without
-  - [ ] The decision model in JSON mode (a JSON schema, no thinking): checked directly against Ollama on the
-        20 run prompts, it made the same decisions in about 1 s instead of 20 s; next is the guardian and a full run
+  - [x] The decision model in JSON mode (a JSON schema, no thinking): the same decisions on the 20 run
+        prompts in about 1 s a check instead of 20 s
+  - [ ] A full run with the JSON mode, to publish its quality, cost and latency
   - [ ] A larger run (all 40 people, several seeds), so one case is no longer ten points
   - [ ] A weaker local model for `LOCAL`, so its quality is measured rather than borrowed from the cloud stand-in
   - [ ] Recall and precision of the detectors and of the decision model, and the time each adds

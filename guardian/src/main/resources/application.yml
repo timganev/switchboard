@@ -23,6 +23,6 @@ switchboard:
       # type: local
       # url: http://localhost:11434
       # model: qwen3.6:35b-a3b
-      # reasoning-effort: low
-      # timeout: 60s
+      # reasoning-effort: none
+      # timeout: 10s
       # route: LOCAL
