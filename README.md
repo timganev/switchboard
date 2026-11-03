@@ -173,7 +173,7 @@ switchboard.guardian.decision-model:
 The first version asked for free text. Without thinking, `qwen3.6:35b-a3b` then called a town a name and
 a job health data, and with a little thinking it was right at about 20 seconds a check. With the JSON
 schema and no thinking it made the same decisions on the 20 Leak Lab prompts in about 1 second a check
-(prompt version 2). The published run below used the first version.
+(prompt version 2), which is what the run below measures.
 
 ### The in-flight board
 
@@ -319,20 +319,22 @@ curl localhost:8084/v1/runs/<run id>
 curl localhost:8084/v1/runs/<run id>/chart.svg
 ```
 
-Run of 2 November 2026: 20 prompts, 50 real values, seed 42, `qwen3.6:35b-a3b` as attacker and judge
-(thinking), as both answer models (no thinking) and as the decision model (a little thinking); 100
-minutes on an Apple Silicon laptop. The raw scores are in
-[`docs/leak-lab-run-2026-11-02-decision-model.json`](docs/leak-lab-run-2026-11-02-decision-model.json),
-and an earlier run without the decision model in [`docs/leak-lab-run-2026-11-02.json`](docs/leak-lab-run-2026-11-02.json).
+Run of 3 November 2026: 20 prompts, 50 real values, seed 42, `qwen3.6:35b-a3b` as attacker and judge
+(thinking), as both answer models (no thinking) and as the decision model (JSON schema, no thinking);
+85 minutes on an Apple Silicon laptop. The raw scores are in
+[`docs/leak-lab-run-2026-11-03-json-mode.json`](docs/leak-lab-run-2026-11-03-json-mode.json). The runs
+of 2 November are in [`docs/leak-lab-run-2026-11-02-decision-model.json`](docs/leak-lab-run-2026-11-02-decision-model.json)
+(the decision model in free text with a little thinking) and
+[`docs/leak-lab-run-2026-11-02.json`](docs/leak-lab-run-2026-11-02.json) (without it).
 
 | Strategy | Real values that left | Right person named | Without the name | Answer quality | Cloud cost | Mean latency |
 |---|---|---|---|---|---|---|
-| `NONE` | 50 of 50 | 20 of 20 | 10 of 10 | 4.7 | $0.098 | 6.2 s |
-| `MASK` | 0 | 15 of 20 | 5 of 10 | 3.25 | $0.074 | 4.8 s |
-| `PLACEHOLDER` | 0 | 16 of 20 | 6 of 10 | 4.6 | $0.077 | 5.0 s |
-| `SURROGATE` | 0 | 12 of 20 | 3 of 10 | 4.65 | $0.095 | 6.0 s |
-| `SURROGATE_MODEL` | 0 | 2 of 20 | 2 of 10 | 4.65 | $0.029 | 32.2 s |
-| `LOCAL` | 0 | 0 | 0 | 4.7 | $0 | 6.0 s |
+| `NONE` | 50 of 50 | 20 of 20 | 10 of 10 | 4.65 | $0.098 | 6.1 s |
+| `MASK` | 0 | 15 of 20 | 5 of 10 | 3.35 | $0.074 | 4.7 s |
+| `PLACEHOLDER` | 0 | 16 of 20 | 6 of 10 | 4.7 | $0.077 | 4.8 s |
+| `SURROGATE` | 0 | 13 of 20 | 3 of 10 | 4.7 | $0.099 | 6.1 s |
+| `SURROGATE_MODEL` | 0 | 1 of 20 | 1 of 10 | 4.65 | $0.024 | 6.9 s |
+| `LOCAL` | 0 | 0 | 0 | 4.65 | $0 | 5.9 s |
 
 ![Answer quality against people re-identified, per strategy](docs/leak-lab-tradeoff.svg)
 
@@ -341,26 +343,28 @@ What it says, with only 20 cases behind it:
 - Hiding the identifiers is not hiding the person. With no real value left, the town and the job were
   still enough for the right person half of the time, five times a blind guess.
 - Names are the guardian's biggest gap: it finds identifiers, not names, so a named prompt is
-  recognised under every strategy that sends anything (10 of 10 with masks, 9 of 10 with surrogates).
+  recognised under every strategy that sends anything (10 of 10 with masks and with surrogates).
 - Surrogates did a little better than masks because a fake EGN carries a fake date of birth, which
   points the attacker the wrong way. One case is ten points here, so this needs a larger run: the
   very first run of the same set gave 13 of 20 for surrogates and 15 for placeholders, so the attacker
-  moves by a case or two between runs even at temperature 0. The two runs of 2 November agreed on
-  every re-identification, and their quality grades differ by 0.1 at most.
+  moves by a case or two between runs even at temperature 0. The three runs since 2 November differ
+  by one case at most, and their quality grades by 0.1 at most.
 - The decision model closes the name gap: with it, no named prompt was recognised (0 of 10, against
-  9 of 10 with surrogates alone), because those prompts stayed local. About two thirds of all prompts
-  stayed local, so the cloud cost fell by two thirds while quality held. The price is latency: every
-  check took about 20 seconds with this model, so the mean went from 6 to 32 seconds. The two
-  recognised people were in unnamed prompts that the model let through, where only the town and the
-  job were left.
-- Masks cost answer quality (3.25 against 4.7): the answer keeps `***` where the user needed the
+  10 of 10 with surrogates alone), because those prompts stayed local. So did the unnamed prompts
+  about a patient, three quarters of all prompts, so the cloud cost fell by three quarters while
+  quality held. The one recognised person was in an unnamed prompt the model let through, where only
+  the town and the job were left.
+- The way the model answers decides whether the slot is usable. Asked for free text with a little
+  thinking, each check took about 20 seconds and the mean latency went from 6 to 32 seconds. Held to
+  a JSON schema without thinking, the same model made the same calls in about a second, and the mean
+  went from 6.1 to 6.9 seconds.
+- Masks cost answer quality (3.35 against 4.65): the answer keeps `***` where the user needed the
   phone or the EGN. Placeholders and surrogates come back as real values and lose almost nothing.
 - Cost and latency follow the length of the answer, not the strategy: the guardian adds milliseconds,
   and a masked prompt gets a shorter, cheaper and worse answer. Surrogates cost what no protection
   costs, because the prompt looks just as real.
-- `LOCAL` and `SURROGATE_MODEL` win on quality only because the same model answers locally. With a
-  weaker local model, the quality of what stays local is the number to watch, and a faster decision
-  model is what would make the slot usable on every request.
+- `LOCAL` and `SURROGATE_MODEL` keep their quality only because the same model answers locally. With
+  a weaker local model, the quality of what stays local is the number to watch.
 
 ## Repository layout
 
@@ -483,7 +487,7 @@ curl -X POST 'localhost:8084/v1/runs?cases=20'
   - [x] The decision model slot, measured with and without
   - [x] The decision model in JSON mode (a JSON schema, no thinking): the same decisions on the 20 run
         prompts in about 1 s a check instead of 20 s
-  - [ ] A full run with the JSON mode, to publish its quality, cost and latency
+  - [x] A full run with the JSON mode: 1 of 20 recognised, a quarter of the cloud cost, 6.9 s mean latency
   - [ ] A larger run (all 40 people, several seeds), so one case is no longer ten points
   - [ ] A weaker local model for `LOCAL`, so its quality is measured rather than borrowed from the cloud stand-in
   - [ ] Recall and precision of the detectors and of the decision model, and the time each adds
