@@ -478,13 +478,16 @@ curl -X POST 'localhost:8084/v1/runs?cases=20'
   - [x] Leakage and re-identification per strategy, measured against the real guardian
   - [x] Answer quality, cost and latency per strategy, and the privacy versus utility chart
   - [x] The decision model slot, measured with and without
+  - [ ] The decision model in JSON mode (a JSON schema, no thinking): checked directly against Ollama on the
+        20 run prompts, it made the same decisions in about 1 s instead of 20 s; next is the guardian and a full run
   - [ ] A larger run (all 40 people, several seeds), so one case is no longer ten points
   - [ ] A weaker local model for `LOCAL`, so its quality is measured rather than borrowed from the cloud stand-in
   - [ ] Recall and precision of the detectors and of the decision model, and the time each adds
   - [ ] Surrogate names instead of keeping every named prompt local, so the cloud still gets the task
   - [ ] Runs published as an `eval-run-completed` event, and the chart on GitHub Pages
 - [ ] **5. Hardening:** what a team would need before trusting it
-  - [ ] Authentication with Keycloak (OAuth2, JWT); the team still comes from a header
+  - [ ] API keys per team, like OpenAI and Anthropic: `Authorization: Bearer sb-…`, only a SHA-256 hash in
+        Postgres, the team taken from the key instead of a header, issue and revoke endpoints, `last_used_at`
   - [ ] `SKETCH`: the cloud model drafts on de-identified text, a local model fills in the real details
   - [ ] Lethal trifecta guard on the agent's tool list
   - [ ] The difficulty slot in the gateway: easy tasks to a cheaper model, measured like the privacy slot
@@ -492,6 +495,14 @@ curl -X POST 'localhost:8084/v1/runs?cases=20'
         spending the whole `max_tokens` before it answers
   - [ ] The whole stack from `deploy/compose.yml` started and checked end to end
   - [ ] Helm charts and system tests running as a Kubernetes Job, with Allure reports on GitHub Pages
+
+**Why API keys and not JWT.** Coding agents already send a bearer key, so nothing changes for them. There is no
+identity server to run, and a revoked key stops working on the next request. A JWT is checked without a lookup,
+but it stays valid until it expires, so revoking it needs a deny list, which is a lookup again. A user login
+would bring JWT through the Spring OAuth2 resource server, but the gateway serves teams and their agents, not
+people. Good to discuss: why only the hash is stored (a leaked table gives no keys, and SHA-256 is enough
+because the keys are random, unlike passwords), comparing in constant time, a recognisable prefix so the
+guardian and secret scanners catch a leaked key, and rotating with two live keys per team.
 
 **To decide**
 - [ ] **Adaptive limits on top of the board.** The board counts requests, but the safe limit per
@@ -501,7 +512,7 @@ curl -X POST 'localhost:8084/v1/runs?cases=20'
 
 ## Tech stack
 
-Java 25, Spring Boot 4, Kafka, Postgres with Liquibase, Redis, OpenSearch, Keycloak, Testcontainers,
+Java 25, Spring Boot 4, Kafka, Postgres with Liquibase, Redis, OpenSearch, Testcontainers,
 WireMock, Docker, Helm, GitHub Actions.
 
 ## License
