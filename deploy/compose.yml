@@ -8,6 +8,10 @@ x-service: &service
 services:
   redis:
     image: redis:7.4
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
     ports:
       - "6379:6379"
 
@@ -17,6 +21,10 @@ services:
       POSTGRES_DB: switchboard
       POSTGRES_USER: switchboard
       POSTGRES_PASSWORD: switchboard
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "switchboard"]
+      interval: 2s
+      retries: 30
     ports:
       - "5432:5432"
 
@@ -33,6 +41,10 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,HOST:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+      interval: 5s
+      retries: 30
     ports:
       - "9092:9092"
 
@@ -45,6 +57,10 @@ services:
       OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
       # A single local node: a nearly full disk must not stop it from creating the index.
       cluster.routing.allocation.disk.threshold_enabled: "false"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "localhost:9200"]
+      interval: 5s
+      retries: 30
     ports:
       - "9200:9200"
 
@@ -63,8 +79,16 @@ services:
       <<: *build
       args:
         MODULE: gateway
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
+      # A list from the environment replaces the whole list in application.yml, so every field is set.
+      SWITCHBOARD_BACKEND_INSTANCES_0_NAME: mock
       SWITCHBOARD_BACKEND_INSTANCES_0_URL: http://mock-llm:8090/v1
+      SWITCHBOARD_BACKEND_INSTANCES_0_LOCALITY: LOCAL
       SWITCHBOARD_GUARDIAN_URL: http://guardian:8081
       SWITCHBOARD_BOARD_TYPE: redis
       SPRING_DATA_REDIS_HOST: redis
@@ -78,6 +102,9 @@ services:
       <<: *build
       args:
         MODULE: guardian
+    depends_on:
+      kafka:
+        condition: service_healthy
     environment:
       # A demo value; set your own outside of local runs.
       SWITCHBOARD_GUARDIAN_SECRET: ${SWITCHBOARD_GUARDIAN_SECRET:-local-demo-secret-change-me-0123456789}
@@ -91,6 +118,11 @@ services:
       <<: *build
       args:
         MODULE: ledger
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/switchboard
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -103,6 +135,11 @@ services:
       <<: *build
       args:
         MODULE: trace
+    depends_on:
+      kafka:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SWITCHBOARD_TRACE_OPENSEARCH_URL: http://opensearch:9200
@@ -115,5 +152,12 @@ services:
       <<: *build
       args:
         MODULE: leak-lab
+    environment:
+      SWITCHBOARD_LEAK_LAB_GUARDIAN_URL: http://guardian:8081
+      # The models run on the host, e.g. Ollama; set OLLAMA_URL to use another endpoint.
+      SWITCHBOARD_LEAK_LAB_ATTACKER_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      SWITCHBOARD_LEAK_LAB_JUDGE_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      SWITCHBOARD_LEAK_LAB_CLOUD_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      SWITCHBOARD_LEAK_LAB_LOCAL_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
     ports:
       - "8084:8084"

@@ -397,9 +397,15 @@ Requires Java 25. Maven comes with the wrapper.
 ```bash
 ./mvnw verify                                   # build and run the tests
 ./mvnw -B package -DskipTests                   # build the jars
-docker compose -f deploy/compose.yml up -d      # infrastructure and all services
-curl localhost:8080/actuator/health
+docker compose -f deploy/compose.yml up -d --wait   # infrastructure first, then all services
+deploy/smoke.sh                                 # checks the whole stack end to end
 ```
+
+`deploy/smoke.sh` sends requests through the gateway in both formats and checks that every service is
+up, an EGN goes out as a surrogate, a private key is blocked, the ledger keeps the team's budget, the
+trace merges each call with its verdict and the real EGN is nowhere in OpenSearch. It works the same
+with Podman (`podman compose`). Leak Lab in the stack reaches the models on the host at
+`host.docker.internal:11434`; set `OLLAMA_URL` to use another endpoint.
 
 The system tests read each service's base URL from an environment variable, for example
 `GATEWAY_BASE_URL=http://localhost:8080`, and skip a service whose variable is not set.
@@ -501,7 +507,7 @@ curl -X POST 'localhost:8084/v1/runs?cases=20'
   - [ ] The difficulty slot in the gateway: easy tasks to a cheaper model, measured like the privacy slot
   - [ ] Thinking models: forward or drop the `reasoning` field on purpose, and stop a thinking model from
         spending the whole `max_tokens` before it answers
-  - [ ] The whole stack from `deploy/compose.yml` started and checked end to end
+  - [x] The whole stack from `deploy/compose.yml` started and checked end to end (`deploy/smoke.sh`)
   - [ ] Helm charts and system tests running as a Kubernetes Job, with Allure reports on GitHub Pages
 
 **Why API keys and not JWT.** Coding agents already send a bearer key, so nothing changes for them. There is no
