@@ -17,6 +17,7 @@ switchboard:
     # The surrogate secret comes from SWITCHBOARD_GUARDIAN_SECRET; the guardian does not start without it.
     policy:
       PRIVATE_KEY: BLOCK
+      NAME: LOCAL                 # SURROGATE sends found names out as surrogate names
     # Off by default; a local model can look for names and health data the detectors cannot find.
     decision-model:
       type: none

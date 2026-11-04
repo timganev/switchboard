@@ -25,6 +25,8 @@ public record GuardianProperties(String secret, Map<SensitiveType, Route> policy
             merged.put(type, Route.SURROGATE);
         }
         merged.put(SensitiveType.PRIVATE_KEY, Route.BLOCK);
+        // Re-identification was lowest with named prompts kept in, so surrogate names are opt-in.
+        merged.put(SensitiveType.NAME, Route.LOCAL);
         if (policy != null) {
             merged.putAll(policy);
         }

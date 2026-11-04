@@ -7,6 +7,7 @@ import io.github.timganev.switchboard.commons.chat.Role;
 import io.github.timganev.switchboard.commons.chat.TextPart;
 import io.github.timganev.switchboard.commons.event.DecisionModelRef;
 import io.github.timganev.switchboard.commons.event.SensitivityReason;
+import io.github.timganev.switchboard.commons.privacy.SensitiveType;
 import io.github.timganev.switchboard.guardian.decision.Classification;
 import io.github.timganev.switchboard.guardian.decision.DecisionModel;
 import io.github.timganev.switchboard.guardian.decision.DecisionModelProperties;
@@ -48,10 +49,22 @@ class DecisionSlotTest {
     }
 
     @Test
-    void shouldSwapTheNamesTheModelFoundForSurrogates() {
+    void shouldKeepTheNamesTheModelFoundLocalByDefault() {
         when(model.classify(anyString())).thenReturn(new Classification(Set.of("NAME"), List.of("Ivan Petrov"), false));
 
         DecisionSlot.Decision decision = slot(model, null).decide(request("Ivan Petrov, EGN 7501020018"));
+
+        assertThat(decision.inspection().route()).isEqualTo(Route.LOCAL);
+        assertThat(decision.escalatedByModel()).isTrue();
+    }
+
+    @Test
+    void shouldSwapTheNamesTheModelFoundForSurrogatesWhenThePolicySaysSo() {
+        when(model.classify(anyString())).thenReturn(new Classification(Set.of("NAME"), List.of("Ivan Petrov"), false));
+        Guardian surrogateNames = new Guardian(new Detector(), new SurrogateFactory(),
+                new GuardianProperties("a-test-secret-that-is-long-enough!", Map.of(SensitiveType.NAME, Route.SURROGATE)));
+
+        DecisionSlot.Decision decision = slot(surrogateNames, model, null).decide(request("Ivan Petrov, EGN 7501020018"));
 
         assertThat(decision.inspection().route()).isEqualTo(Route.SURROGATE);
         assertThat(decision.inspection().reasons()).containsExactly(new SensitivityReason("EGN", 1), new SensitivityReason("NAME", 2));
@@ -115,6 +128,10 @@ class DecisionSlotTest {
     }
 
     private DecisionSlot slot(DecisionModel decisionModel, Route route) {
+        return slot(guardian, decisionModel, route);
+    }
+
+    private static DecisionSlot slot(Guardian guardian, DecisionModel decisionModel, Route route) {
         return new DecisionSlot(guardian, decisionModel, new DecisionModelProperties(null, null, null, null, null, route));
     }
 

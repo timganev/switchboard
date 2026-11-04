@@ -31,6 +31,7 @@ class GuardianTest {
     private static final String IBAN = "BG80BNBG96611020345678";
 
     private final Guardian guardian = guardian(Map.of());
+    private final Guardian surrogateNames = guardian(Map.of(SensitiveType.NAME, Route.SURROGATE));
 
     @Test
     void shouldLetARequestWithoutSensitiveDataGoToTheCloudUnchanged() {
@@ -120,7 +121,7 @@ class GuardianTest {
     void shouldSwapANameForASurrogateOfTheSameKindAndBringItBack() {
         ChatRequest original = request(List.of(user("Radka Petrova from Burgas, EGN " + EGN + ", missed a payment.")));
 
-        Inspection inspection = guardian.inspect(original, List.of("Radka Petrova"));
+        Inspection inspection = surrogateNames.inspect(original, List.of("Radka Petrova"));
 
         assertThat(inspection.route()).isEqualTo(Route.SURROGATE);
         assertThat(inspection.reasons()).contains(new SensitivityReason("NAME", 2));
@@ -130,7 +131,7 @@ class GuardianTest {
         String fakeLast = sent.substring(sent.indexOf(' ') + 1, sent.indexOf(" from"));
         assertThat(fakeLast).endsWith("a");
 
-        Restoration restoration = guardian.restore(original, answer("Dear " + fakeFirst + ", " + fakeFirst + " " + fakeLast + " owes nothing."),
+        Restoration restoration = surrogateNames.restore(original, answer("Dear " + fakeFirst + ", " + fakeFirst + " " + fakeLast + " owes nothing."),
                 inspection.substitutions());
 
         assertThat(restoration.response().parts()).containsExactly(new TextPart("Dear Radka, Radka Petrova owes nothing."));
@@ -138,16 +139,16 @@ class GuardianTest {
 
     @Test
     void shouldReplaceANameOnlyAsAWholeWordAndKeepItsAlphabet() {
-        Inspection latin = guardian.inspect(request(List.of(user("Ivan called Ivanka."))), List.of("Ivan"));
-        Inspection cyrillic = guardian.inspect(request(List.of(user("Мария Иванова пита."))), List.of("Мария Иванова"));
+        Inspection latin = surrogateNames.inspect(request(List.of(user("Ivan called Ivanka."))), List.of("Ivan"));
+        Inspection cyrillic = surrogateNames.inspect(request(List.of(user("Мария Иванова пита."))), List.of("Мария Иванова"));
 
         assertThat(text(latin.request(), 0)).doesNotStartWith("Ivan ").endsWith(" called Ivanka.");
         assertThat(text(cyrillic.request(), 0)).matches("\\p{IsCyrillic}+ \\p{IsCyrillic}+а пита\\.").doesNotContain("Мария").doesNotContain("Иванова");
     }
 
     @Test
-    void shouldFollowThePolicyForNames() {
-        Inspection inspection = guardian(Map.of(SensitiveType.NAME, Route.LOCAL)).inspect(request(List.of(user("Ivan called."))), List.of("Ivan"));
+    void shouldKeepANamedPromptLocalByDefault() {
+        Inspection inspection = guardian.inspect(request(List.of(user("Ivan called."))), List.of("Ivan"));
 
         assertThat(inspection.route()).isEqualTo(Route.LOCAL);
         assertThat(text(inspection.request(), 0)).isEqualTo("Ivan called.");

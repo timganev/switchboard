@@ -158,11 +158,11 @@ There is no cloud option: asking a cloud model whether a prompt is sensitive wou
 out. The model answers in JSON that the server holds to a schema, with the words that prove each
 category (`{"names": ["Anna Georgieva"], "health": ["follow-up visit"]}`), so it cannot reason in prose
 before it answers. A claim whose words are not in the text is dropped, and a name must be
-capitalised words, not a role like "the customer". Names alone are swapped for surrogates like the
-detectors' values: each word for a first name or a surname of the same gender and alphabet, replaced
-only as a whole word, so the cloud still gets the task (`Radka Petrova` goes out as `Maria Dimitrova`,
-`Мария Иванова` as `Десислава Колева`). The policy decides as for any type, so `NAME: LOCAL` keeps named
-prompts in. Since the names come from a model and cannot be rebuilt from the request, the gateway hands
+capitalised words, not a role like "the customer". The policy decides for names as for any type. By
+default `NAME: LOCAL` keeps a named prompt in, because that re-identified the fewest people in Leak Lab.
+`NAME: SURROGATE` swaps names like the detectors' values instead: each word for a first name or a
+surname of the same gender and alphabet, replaced only as a whole word, so the cloud still gets the
+task (`Radka Petrova` goes out as `Maria Dimitrova`, `Мария Иванова` as `Десислава Колева`). Since the names come from a model and cannot be rebuilt from the request, the gateway hands
 the inspection's substitutions back when it asks for the restore. Health data keeps the request `LOCAL`
 (or `BLOCK`), because there is no value to swap, and so does a timeout or an answer that is not an
 answer. The trace records which model and prompt version took part and whether the model
@@ -372,7 +372,8 @@ curl localhost:8084/v1/runs/<run id>/chart.svg
 
 Run of 4 November 2026: 20 prompts, 50 real values, seed 42, `qwen3.6:35b-a3b` as attacker and judge
 (thinking), as both answer models (no thinking) and as the decision model (JSON schema, no thinking);
-98 minutes on an Apple Silicon laptop; the names the decision model finds go out as surrogates. The raw
+98 minutes on an Apple Silicon laptop; in this run the names the decision model finds go out as
+surrogates (`NAME: SURROGATE`). The raw
 scores are in
 [`docs/leak-lab-run-2026-11-04-surrogate-names.json`](docs/leak-lab-run-2026-11-04-surrogate-names.json).
 Earlier runs: [`docs/leak-lab-run-2026-11-03-json-mode.json`](docs/leak-lab-run-2026-11-03-json-mode.json)
@@ -405,10 +406,9 @@ What it says, with only 20 cases behind it:
   by one case at most, and their quality grades by 0.1 at most.
 - The decision model closes most of the name gap. When it kept named prompts local (run of
   3 November), no named prompt was recognised (0 of 10) and the cloud cost fell by three quarters.
-  Now the names it finds go out as surrogates: 2 of 10 named prompts were recognised, against 10 of 10
-  with surrogates alone, and those prompts reach the cloud model again, so the cost is back to what no
-  protection costs. Prompts about a patient still stay local. `NAME: LOCAL` in the policy brings back
-  the stricter trade.
+  With `NAME: SURROGATE` the names it finds go out as surrogates: 2 of 10 named prompts were
+  recognised, against 10 of 10 with surrogates alone, and those prompts reach the cloud model again, so
+  the cost is back to what no protection costs. That is why `NAME: LOCAL` is the default.
 - The way the model answers decides whether the slot is usable. Asked for free text with a little
   thinking, each check took about 20 seconds and the mean latency went from 6 to 32 seconds. Held to
   a JSON schema without thinking, the same model made the same calls in about a second, and the mean
@@ -461,7 +461,7 @@ open http://localhost:8088          # the playground; the live view is at http:/
 
 The answers come from the fake model, which echoes the prompt, so every round trip is visible. With
 [Ollama](https://ollama.com) running, `DECISION_MODEL=local` in front of the second command turns on the
-decision model, and a name in the prompt goes out as a surrogate too (`DECISION_MODEL_NAME` picks the
+decision model, and a prompt with a name stays local (`DECISION_MODEL_NAME` picks the
 model, `qwen3.6:35b-a3b` by default). `docker compose -f deploy/compose.yml down -v` stops it all.
 
 ## Getting started
