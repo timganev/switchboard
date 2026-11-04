@@ -24,6 +24,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -143,7 +144,13 @@ class TraceIntegrationTest {
                 HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/live/stream?team=team-live")).timeout(Duration.ofSeconds(10)).build(),
                 HttpResponse.BodyHandlers.ofLines());
         BlockingQueue<String> lines = new LinkedBlockingQueue<>();
-        Thread.ofVirtual().start(() -> stream.body().forEach(lines::add));
+        Thread.ofVirtual().start(() -> {
+            try {
+                stream.body().forEach(lines::add);
+            } catch (UncheckedIOException closedByTheTest) {
+                // The test closes the stream once it has seen the event.
+            }
+        });
 
         kafka.send(Topics.PRIVACY_DECISION_MADE, callId, new PrivacyDecisionMade(callId, null, Route.SURROGATE,
                 List.of(new SensitivityReason("EGN", 1)), Map.of("detector", "1"), null, false, false, List.of(), Instant.now()));
