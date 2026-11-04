@@ -35,7 +35,7 @@ class ChatCompletionsControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.object").value("chat.completion"))
                 .andExpect(jsonPath("$.model").value("qwen36"))
-                .andExpect(jsonPath("$.choices[0].message.content").value(ChatCompletionsController.CONTENT));
+                .andExpect(jsonPath("$.choices[0].message.content").value(ChatCompletionsController.CONTENT + ". You wrote: Hi"));
     }
 
     @Test
@@ -52,7 +52,7 @@ class ChatCompletionsControllerTest {
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("\"delta\":{\"content\":\"Mock\"}")))
-                .andExpect(content().string(containsString("\"delta\":{\"content\":\" response\"}")))
+                .andExpect(content().string(containsString("\"delta\":{\"content\":\" Hi\"}")))
                 .andExpect(content().string(containsString("\"finish_reason\":\"stop\"")))
                 .andExpect(content().string(containsString("\"usage\"")))
                 .andExpect(content().string(endsWith("data: [DONE]\n\n")));

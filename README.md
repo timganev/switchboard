@@ -8,8 +8,10 @@ decides where the request may go, sends it there, and records why.
 
 > **Status:** the gateway, the guardian, the ledger and the trace work: both APIs, streaming, the
 > in-flight board, surrogates and restore, events, budgets reconciled with the bill, masked traces,
-> the live view and API keys per team; the whole stack starts from compose and is checked end to end. Leak Lab measures leakage, re-identification, answer quality, cost and latency per
-> strategy, with the decision model slot and without; hardening is next (see [Roadmap](#roadmap)).
+> the live view, API keys per team and a playground. The whole stack starts from compose, is checked
+> end to end and can be pulled as images ([Run the demo](#run-the-demo)). Leak Lab measures leakage,
+> re-identification, answer quality, cost and latency per strategy, with the decision model slot and
+> without; hardening is next (see [Roadmap](#roadmap)).
 
 ## Principles
 
@@ -83,7 +85,8 @@ decides where the request may go, sends it there, and records why.
 | `ledger` | **Accountant.** Prices every call, aggregates spend per team, publishes the budget state | Postgres: the system of record for money |
 | `trace` | **Black box.** What happened and why; feeds the live view | OpenSearch: masked traces and decisions, never raw sensitive values |
 | `leak-lab` | **Red team.** Attacks the protection through the gateway and measures leakage, quality, cost and latency for every strategy | Postgres: datasets, runs, results |
-| `mock-llm` | Fake OpenAI-compatible provider for tests and offline demos | No |
+| `mock-llm` | Fake OpenAI-compatible provider for tests and offline demos; it echoes the prompt, so a demo shows what reached the model | No |
+| `console` | **Playground.** One prompt's way through Switchboard: what the guardian lets out, and what comes back | No |
 | `commons` | Event contracts and shared types | — |
 | `system-tests` | End-to-end tests against a deployed system | — |
 
@@ -290,6 +293,19 @@ curl 'localhost:8083/v1/calls?team=payments&limit=20'   # newest first
 curl localhost:8083/v1/calls/<call id>
 ```
 
+### Playground
+
+The console at `localhost:8088` takes a prompt as a user would write it and shows three things side
+by side: the prompt with the real values the guardian found, what left for the model with the
+surrogates in their place, and the answer the caller got back with the real values restored. With
+the fake model, which echoes the prompt, the round trip is easy to follow: the surrogates go out and
+the real values come back. A private key shows the refusal, and a name shows the decision model when
+it is on. The page is plain HTML, CSS and one JavaScript module, with no framework and no build step.
+The console's server side asks the guardian what would leave and sends the prompt through the gateway
+with its own API key, so the key never reaches the browser.
+
+![The playground](docs/playground.png)
+
 ### Live view
 
 The trace service also serves the console at `localhost:8083`: the latest 50 calls rendered on the
@@ -417,6 +433,7 @@ switchboard/
 ├── trace/          masked traces, live view
 ├── leak-lab/       red team and evaluations
 ├── mock-llm/       fake OpenAI-compatible provider
+├── console/        playground (plain HTML and JavaScript)
 ├── system-tests/   end-to-end tests against a deployed system
 └── deploy/         Dockerfile and docker compose
 ```
@@ -428,7 +445,24 @@ switchboard/
 | ledger | 8082 |
 | trace | 8083 |
 | leak-lab | 8084 |
+| console | 8088 |
 | mock-llm | 8090 |
+
+## Run the demo
+
+No Java and no build: CI publishes every service as an image after the smoke check passes, and the
+compose file pulls them. It needs Docker (or Podman) and about 4 GB of memory.
+
+```bash
+git clone https://github.com/timganev/switchboard && cd switchboard
+docker compose -f deploy/compose.yml up -d --wait --pull always --no-build
+open http://localhost:8088          # the playground; the live view is at http://localhost:8083
+```
+
+The answers come from the fake model, which echoes the prompt, so every round trip is visible. With
+[Ollama](https://ollama.com) running, `DECISION_MODEL=local` in front of the second command turns on the
+decision model, and a name in the prompt goes out as a surrogate too (`DECISION_MODEL_NAME` picks the
+model, `qwen3.6:35b-a3b` by default). `docker compose -f deploy/compose.yml down -v` stops it all.
 
 ## Getting started
 
@@ -444,8 +478,8 @@ deploy/smoke.sh                                 # checks the whole stack end to 
 `deploy/smoke.sh` issues an API key, sends requests through the gateway in both formats and checks that
 every service is up, a request without a key or with a revoked one is refused, an EGN goes out as a
 surrogate, a private key is blocked, the ledger keeps the team's budget, the trace merges each call with
-its verdict and the real EGN is nowhere in OpenSearch. It works the same
-with Podman (`podman compose`). Leak Lab in the stack reaches the models on the host at
+its verdict, the real EGN is nowhere in OpenSearch and the playground shows the round trip. It works
+the same with Podman (`podman compose`). Leak Lab in the stack reaches the models on the host at
 `host.docker.internal:11434`; set `OLLAMA_URL` to use another endpoint.
 
 The system tests read each service's base URL from an environment variable, for example

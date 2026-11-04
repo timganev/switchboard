@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: console
+
+server:
+  port: 8088
+
+switchboard:
+  console:
+    gateway-url: http://localhost:8080
+    guardian-url: http://localhost:8081
+    # With API keys on in the gateway, give a key, or the admin token to issue one for the team on first use.
+    # api-key:
+    # admin-token:
+    team: playground
+    model: qwen36
+    timeout: 120s

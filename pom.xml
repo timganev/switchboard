@@ -31,6 +31,7 @@
         <module>ledger</module>
         <module>trace</module>
         <module>leak-lab</module>
+        <module>console</module>
         <module>system-tests</module>
     </modules>
 

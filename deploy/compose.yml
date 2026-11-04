@@ -70,6 +70,7 @@ services:
       <<: *build
       args:
         MODULE: mock-llm
+    image: ghcr.io/timganev/switchboard-mock-llm:${SWITCHBOARD_TAG:-latest}
     ports:
       - "8090:8090"
 
@@ -79,6 +80,7 @@ services:
       <<: *build
       args:
         MODULE: gateway
+    image: ghcr.io/timganev/switchboard-gateway:${SWITCHBOARD_TAG:-latest}
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,6 +110,7 @@ services:
       <<: *build
       args:
         MODULE: guardian
+    image: ghcr.io/timganev/switchboard-guardian:${SWITCHBOARD_TAG:-latest}
     depends_on:
       kafka:
         condition: service_healthy
@@ -115,6 +118,11 @@ services:
       # A demo value; set your own outside of local runs.
       SWITCHBOARD_GUARDIAN_SECRET: ${SWITCHBOARD_GUARDIAN_SECRET:-local-demo-secret-change-me-0123456789}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # DECISION_MODEL=local turns on the decision model, a local model at OLLAMA_URL that finds names and health data.
+      SWITCHBOARD_GUARDIAN_DECISION_MODEL_TYPE: ${DECISION_MODEL:-none}
+      SWITCHBOARD_GUARDIAN_DECISION_MODEL_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      SWITCHBOARD_GUARDIAN_DECISION_MODEL_MODEL: ${DECISION_MODEL_NAME:-qwen3.6:35b-a3b}
+      SWITCHBOARD_GUARDIAN_DECISION_MODEL_REASONING_EFFORT: none
     ports:
       - "8081:8081"
 
@@ -124,6 +132,7 @@ services:
       <<: *build
       args:
         MODULE: ledger
+    image: ghcr.io/timganev/switchboard-ledger:${SWITCHBOARD_TAG:-latest}
     depends_on:
       postgres:
         condition: service_healthy
@@ -141,6 +150,7 @@ services:
       <<: *build
       args:
         MODULE: trace
+    image: ghcr.io/timganev/switchboard-trace:${SWITCHBOARD_TAG:-latest}
     depends_on:
       kafka:
         condition: service_healthy
@@ -158,6 +168,7 @@ services:
       <<: *build
       args:
         MODULE: leak-lab
+    image: ghcr.io/timganev/switchboard-leak-lab:${SWITCHBOARD_TAG:-latest}
     environment:
       SWITCHBOARD_LEAK_LAB_GUARDIAN_URL: http://guardian:8081
       # The models run on the host, e.g. Ollama; set OLLAMA_URL to use another endpoint.
@@ -167,3 +178,17 @@ services:
       SWITCHBOARD_LEAK_LAB_LOCAL_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
     ports:
       - "8084:8084"
+
+  console:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        MODULE: console
+    image: ghcr.io/timganev/switchboard-console:${SWITCHBOARD_TAG:-latest}
+    environment:
+      SWITCHBOARD_CONSOLE_GATEWAY_URL: http://gateway:8080
+      SWITCHBOARD_CONSOLE_GUARDIAN_URL: http://guardian:8081
+      SWITCHBOARD_CONSOLE_ADMIN_TOKEN: ${SWITCHBOARD_AUTH_ADMIN_TOKEN:-local-demo-admin-token-change-me-0123}
+    ports:
+      - "8088:8088"

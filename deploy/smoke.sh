@@ -6,6 +6,7 @@ GATEWAY=${GATEWAY:-http://localhost:8080}
 LEDGER=${LEDGER:-http://localhost:8082}
 TRACE=${TRACE:-http://localhost:8083}
 OPENSEARCH=${OPENSEARCH:-http://localhost:9200}
+CONSOLE=${CONSOLE:-http://localhost:8088}
 ADMIN_TOKEN=${SWITCHBOARD_AUTH_ADMIN_TOKEN:-local-demo-admin-token-change-me-0123}
 TEAM="smoke-$(date +%s)"
 EGN=7501020018
@@ -33,7 +34,7 @@ eventually() {
   return 1
 }
 
-for port in 8080 8081 8082 8083 8084 8090; do
+for port in 8080 8081 8082 8083 8084 8088 8090; do
   eventually 120 "curl -sf localhost:$port/actuator/health | grep -q '\"UP\"'" && up=true || up=false
   check "service on port $port is up" $up
 done
@@ -73,6 +74,11 @@ check "the real EGN is nowhere in OpenSearch" "$([ "${hits:-1}" = 0 ] && echo tr
 
 status=$(curl -s -o /dev/null -w '%{http_code}' "$TRACE/")
 check "the live view is served" "$([ "$status" = 200 ] && echo true || echo false)"
+
+# The fake model echoes the prompt, so the real EGN in the answer shows that the surrogate came back as the real value.
+played=$(curl -s "$CONSOLE/api/playground" -H 'Content-Type: application/json' -d "{\"prompt\": \"Risks for EGN $EGN?\"}")
+echo "$played" | grep -q '"route":"SURROGATE"' && echo "$played" | grep -q "\"answer\":\"[^\"]*$EGN" && playground=true || playground=false
+check "the playground shows a surrogate going out and the real value coming back" $playground
 
 curl -s -o /dev/null -X DELETE "$GATEWAY/admin/keys/$KEY_ID" -H "Authorization: Bearer $ADMIN_TOKEN"
 status=$(curl -s -o /dev/null -w '%{http_code}' "$GATEWAY/v1/chat/completions" -H 'Content-Type: application/json' -H "Authorization: Bearer $KEY" \

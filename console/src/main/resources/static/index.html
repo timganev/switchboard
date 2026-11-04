@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Switchboard playground</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="module" src="app.js"></script>
+</head>
+<body>
+<main>
+    <header>
+        <h1>Switchboard playground</h1>
+        <p class="lead">Write a prompt as a user would. See what the guardian lets out to the model, and what comes back.</p>
+    </header>
+
+    <form id="prompt-form">
+        <label for="prompt" class="label">Prompt</label>
+        <textarea id="prompt" rows="4" placeholder="Draft a reply to the customer with EGN 7501020018 about a double charge."></textarea>
+        <div class="examples" aria-label="Examples">
+            <span class="muted">Try:</span>
+            <button type="button" class="example" data-prompt="Draft a reply to the customer with EGN 7501020018 and IBAN BG80BNBG96611020345678 about a payment that was charged twice.">EGN and IBAN</button>
+            <button type="button" class="example" data-prompt="Call the client on +359 88 123 4567 or write to maria.ivanova@firma.bg and confirm the new date.">Phone and email</button>
+            <button type="button" class="example" title="Names need the decision model, a local model that is off by default" data-prompt="Radka Petrova from Burgas asks when her refund arrives. Write a short, kind answer.">A name</button>
+            <button type="button" class="example" data-prompt="Why does my key sk-ant-api03-abcdefghijklmnopqrstuvwxyz012345 stop working after an hour?">An API key</button>
+            <button type="button" class="example" data-prompt="Fix the format of this key: -----BEGIN PRIVATE KEY----- MIIEvQIBADANBgkqhkiG9w0BAQEFAASC">A private key</button>
+            <button type="button" class="example" data-prompt="Explain Kafka consumer groups in two sentences.">Nothing sensitive</button>
+        </div>
+        <div class="actions">
+            <button type="submit" id="send">Send</button>
+            <span class="muted hint">Ctrl + Enter</span>
+            <span id="status" class="muted" role="status"></span>
+        </div>
+    </form>
+
+    <section id="result" hidden>
+        <div class="verdict">
+            <span id="route" class="route"></span>
+            <span id="route-text"></span>
+            <span id="reasons" class="reasons"></span>
+            <span id="latency" class="muted"></span>
+        </div>
+        <div class="panels">
+            <article class="panel">
+                <h2>You wrote</h2>
+                <p class="caption">Real values the guardian found are marked.</p>
+                <div id="written" class="text"></div>
+            </article>
+            <article class="panel">
+                <h2>What left for the model</h2>
+                <p class="caption" id="sent-caption"></p>
+                <div id="sent" class="text"></div>
+            </article>
+            <article class="panel">
+                <h2>What you got back</h2>
+                <p class="caption" id="answer-caption"></p>
+                <div id="answer" class="text"></div>
+            </article>
+        </div>
+        <details id="swaps-details">
+            <summary>Values and their surrogates</summary>
+            <div class="table">
+                <table>
+                    <thead><tr><th>Type</th><th>Real value</th><th>Sent instead</th></tr></thead>
+                    <tbody id="swaps"></tbody>
+                </table>
+            </div>
+        </details>
+    </section>
+</main>
+</body>
+</html>
