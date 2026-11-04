@@ -35,16 +35,16 @@
 <text x="115.6" y="336.0" text-anchor="start">blind guess</text>
 <text x="292.0" y="388.0" text-anchor="middle">People re-identified by the attacker</text>
 <text x="16" y="184.0" text-anchor="middle" transform="rotate(-90 16 184.0)">Answer quality (judge, 1 to 5)</text>
-<circle class="dot" cx="428.8" cy="48.0" r="6"><title>PLACEHOLDER: 80% re-identified, quality 4.7, 4849 ms</title></circle>
-<text class="label" x="319.8" y="68.0" text-anchor="start">PLACEHOLDER</text>
-<circle class="dot" cx="360.4" cy="48.0" r="6"><title>SURROGATE: 65% re-identified, quality 4.7, 6144 ms</title></circle>
-<text class="label" x="269.4" y="52.0" text-anchor="start">SURROGATE</text>
-<circle class="dot" cx="520.0" cy="52.0" r="6"><title>NONE: 100% re-identified, quality 4.7, 6079 ms</title></circle>
-<text class="label" x="530.0" y="56.0" text-anchor="start">NONE</text>
-<circle class="dot" cx="86.8" cy="52.0" r="6"><title>SURROGATE_MODEL: 5% re-identified, quality 4.7, 6858 ms</title></circle>
-<text class="label" x="96.8" y="56.0" text-anchor="start">SURROGATE_MODEL</text>
-<circle class="dot" cx="64.0" cy="52.0" r="6"><title>LOCAL: 0% re-identified, quality 4.7, 5877 ms</title></circle>
-<text class="label" x="74.0" y="72.0" text-anchor="start">LOCAL</text>
-<circle class="dot" cx="406.0" cy="156.0" r="6"><title>MASK: 75% re-identified, quality 3.4, 4713 ms</title></circle>
-<text class="label" x="416.0" y="160.0" text-anchor="start">MASK</text>
+<circle class="dot" cx="428.8" cy="40.0" r="6"><title>PLACEHOLDER: 80% re-identified, quality 4.8, 5053 ms</title></circle>
+<text class="label" x="319.8" y="60.0" text-anchor="start">PLACEHOLDER</text>
+<circle class="dot" cx="360.4" cy="40.0" r="6"><title>SURROGATE: 65% re-identified, quality 4.8, 6336 ms</title></circle>
+<text class="label" x="269.4" y="44.0" text-anchor="start">SURROGATE</text>
+<circle class="dot" cx="132.4" cy="40.0" r="6"><title>SURROGATE_MODEL: 15% re-identified, quality 4.8, 7407 ms</title></circle>
+<text class="label" x="142.4" y="60.0" text-anchor="start">SURROGATE_MODEL</text>
+<circle class="dot" cx="520.0" cy="48.0" r="6"><title>NONE: 100% re-identified, quality 4.7, 6220 ms</title></circle>
+<text class="label" x="530.0" y="52.0" text-anchor="start">NONE</text>
+<circle class="dot" cx="64.0" cy="48.0" r="6"><title>LOCAL: 0% re-identified, quality 4.7, 6128 ms</title></circle>
+<text class="label" x="74.0" y="52.0" text-anchor="start">LOCAL</text>
+<circle class="dot" cx="406.0" cy="148.0" r="6"><title>MASK: 75% re-identified, quality 3.5, 4834 ms</title></circle>
+<text class="label" x="416.0" y="152.0" text-anchor="start">MASK</text>
 </svg>
