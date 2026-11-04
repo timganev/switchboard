@@ -89,7 +89,7 @@ class GuardianTest {
         String surrogate = text(guardian.inspect(original).request(), 0).substring("Check IBAN ".length());
         ChatResponse answer = answer("IBAN " + surrogate + " looks fine.");
 
-        Restoration restoration = guardian.restore(original, answer);
+        Restoration restoration = guardian.restore(original, answer, null);
 
         assertThat(restoration.response().parts()).containsExactly(new TextPart("IBAN " + IBAN + " looks fine."));
         assertThat(restoration.responseReasons()).isEmpty();
@@ -101,7 +101,7 @@ class GuardianTest {
         String surrogate = text(guardian.inspect(original).request(), 0).substring("Check EGN ".length());
         String dashed = String.join("-", surrogate.split(""));
 
-        Restoration restoration = guardian.restore(original, answer("Digits: " + dashed));
+        Restoration restoration = guardian.restore(original, answer("Digits: " + dashed), null);
 
         assertThat(restoration.response().parts()).containsExactly(new TextPart("Digits: " + String.join("-", EGN.split(""))));
         assertThat(restoration.responseReasons()).isEmpty();
@@ -111,9 +111,46 @@ class GuardianTest {
     void shouldReportSensitiveDataTheModelProducedOnItsOwn() {
         ChatRequest original = request(List.of(user("Invent a contact for " + EGN)));
 
-        Restoration restoration = guardian.restore(original, answer("Write to petar@firma.bg about " + EGN));
+        Restoration restoration = guardian.restore(original, answer("Write to petar@firma.bg about " + EGN), null);
 
         assertThat(restoration.responseReasons()).containsExactly(new SensitivityReason("EMAIL", 1));
+    }
+
+    @Test
+    void shouldSwapANameForASurrogateOfTheSameKindAndBringItBack() {
+        ChatRequest original = request(List.of(user("Radka Petrova from Burgas, EGN " + EGN + ", missed a payment.")));
+
+        Inspection inspection = guardian.inspect(original, List.of("Radka Petrova"));
+
+        assertThat(inspection.route()).isEqualTo(Route.SURROGATE);
+        assertThat(inspection.reasons()).contains(new SensitivityReason("NAME", 2));
+        String sent = text(inspection.request(), 0);
+        assertThat(sent).doesNotContain("Radka").doesNotContain("Petrova").doesNotContain(EGN).contains("Burgas");
+        String fakeFirst = sent.substring(0, sent.indexOf(' '));
+        String fakeLast = sent.substring(sent.indexOf(' ') + 1, sent.indexOf(" from"));
+        assertThat(fakeLast).endsWith("a");
+
+        Restoration restoration = guardian.restore(original, answer("Dear " + fakeFirst + ", " + fakeFirst + " " + fakeLast + " owes nothing."),
+                inspection.substitutions());
+
+        assertThat(restoration.response().parts()).containsExactly(new TextPart("Dear Radka, Radka Petrova owes nothing."));
+    }
+
+    @Test
+    void shouldReplaceANameOnlyAsAWholeWordAndKeepItsAlphabet() {
+        Inspection latin = guardian.inspect(request(List.of(user("Ivan called Ivanka."))), List.of("Ivan"));
+        Inspection cyrillic = guardian.inspect(request(List.of(user("Мария Иванова пита."))), List.of("Мария Иванова"));
+
+        assertThat(text(latin.request(), 0)).doesNotStartWith("Ivan ").endsWith(" called Ivanka.");
+        assertThat(text(cyrillic.request(), 0)).matches("\\p{IsCyrillic}+ \\p{IsCyrillic}+а пита\\.").doesNotContain("Мария").doesNotContain("Иванова");
+    }
+
+    @Test
+    void shouldFollowThePolicyForNames() {
+        Inspection inspection = guardian(Map.of(SensitiveType.NAME, Route.LOCAL)).inspect(request(List.of(user("Ivan called."))), List.of("Ivan"));
+
+        assertThat(inspection.route()).isEqualTo(Route.LOCAL);
+        assertThat(text(inspection.request(), 0)).isEqualTo("Ivan called.");
     }
 
     @Test

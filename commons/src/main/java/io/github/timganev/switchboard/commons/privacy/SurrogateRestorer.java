@@ -132,6 +132,9 @@ public final class SurrogateRestorer {
             regex = "(?<![A-Za-z0-9+])(?:" + PHONE_PREFIX + SEPARATOR + ")?" + separated(nationalNumber(surrogate)) + "(?![A-Za-z0-9])";
         } else if (SEPARABLE.contains(substitution.type())) {
             regex = "(?<![A-Za-z0-9])" + separated(alphanumeric(surrogate)) + "(?![A-Za-z0-9])";
+        } else if (substitution.type() == SensitiveType.NAME) {
+            // Whole words only, so a surrogate "Ivan" is not found inside "Ivanova".
+            regex = "(?<!\\p{L})" + Pattern.quote(surrogate) + "(?!\\p{L})";
         } else {
             regex = Pattern.quote(surrogate);
         }

@@ -20,7 +20,7 @@ public final class Replacer {
         }
         Pattern pattern = Pattern.compile(replacements.keySet().stream()
                 .sorted(Comparator.comparingInt(String::length).reversed())
-                .map(Pattern::quote)
+                .map(Replacer::regex)
                 .collect(Collectors.joining("|")));
         Matcher matcher = pattern.matcher(text);
         StringBuilder out = new StringBuilder();
@@ -29,5 +29,11 @@ public final class Replacer {
         }
         matcher.appendTail(out);
         return out.toString();
+    }
+
+    // A value of letters only is a name, and a name is replaced only as a whole word.
+    private static String regex(String value) {
+        String quoted = Pattern.quote(value);
+        return value.chars().allMatch(Character::isLetter) ? "(?<!\\p{L})" + quoted + "(?!\\p{L})" : quoted;
     }
 }

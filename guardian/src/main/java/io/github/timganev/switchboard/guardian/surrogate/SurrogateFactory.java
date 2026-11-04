@@ -22,6 +22,14 @@ public class SurrogateFactory {
     private static final Pattern API_KEY_PREFIX = Pattern.compile("^(?:sk-(?:ant-|proj-)?|ghp_|github_pat_|AKIA|xox[abprs]-|AIza)");
     private static final List<String> FIRST_NAMES = List.of("ivan", "maria", "georgi", "elena", "petar", "nina", "stefan", "vera");
     private static final List<String> LAST_NAMES = List.of("petrov", "ivanova", "dimitrov", "georgieva", "stoyanov", "koleva");
+    private static final List<String> MALE_NAMES = List.of("Ivan", "Georgi", "Dimitar", "Nikolay", "Petar", "Hristo", "Todor", "Martin");
+    private static final List<String> FEMALE_NAMES = List.of("Maria", "Elena", "Milena", "Gergana", "Desislava", "Yana", "Silvia", "Teodora");
+    private static final List<String> SURNAMES = List.of("Ivanov", "Georgiev", "Dimitrov", "Nikolov", "Hristov", "Todorov", "Kolev", "Angelov");
+    private static final List<String> MALE_NAMES_CYRILLIC = List.of("Иван", "Георги", "Димитър", "Николай", "Петър", "Христо", "Тодор", "Мартин");
+    private static final List<String> FEMALE_NAMES_CYRILLIC = List.of("Мария", "Елена", "Милена", "Гергана", "Десислава", "Яна", "Силвия", "Теодора");
+    private static final List<String> SURNAMES_CYRILLIC = List.of("Иванов", "Георгиев", "Димитров", "Николов", "Христов", "Тодоров", "Колев", "Ангелов");
+    private static final Pattern SURNAME = Pattern.compile("(?i).*(?:ov|ev|ova|eva|ski|ska|ов|ев|ова|ева|ски|ска)");
+    private static final Pattern CYRILLIC = Pattern.compile(".*\\p{IsCyrillic}.*");
     private static final LocalDate OLDEST_BIRTH_DATE = LocalDate.of(1950, 1, 1);
     private static final int BIRTH_DATE_SPAN_DAYS = 20_000;
 
@@ -41,6 +49,7 @@ public class SurrogateFactory {
             case EMAIL -> email(random);
             case API_KEY -> apiKey(value, random);
             case JWT -> jwt(value, random);
+            case NAME -> name(value, random, attempt);
             case PRIVATE_KEY -> throw new IllegalArgumentException("A private key is never replaced by a surrogate");
         };
     }
@@ -92,6 +101,26 @@ public class SurrogateFactory {
     private static String email(SplittableRandom random) {
         return FIRST_NAMES.get(random.nextInt(FIRST_NAMES.size())) + "."
                 + LAST_NAMES.get(random.nextInt(LAST_NAMES.size())) + random.nextInt(100) + "@example.com";
+    }
+
+    // One word of a name: a first name or a surname, of the same gender and alphabet as the real one.
+    private static String name(String value, SplittableRandom random, int attempt) {
+        boolean cyrillic = CYRILLIC.matcher(value).matches();
+        boolean female = value.endsWith("a") || value.endsWith("а") || value.endsWith("я");
+        boolean surname = SURNAME.matcher(value).matches();
+        List<String> names = surname ? (cyrillic ? SURNAMES_CYRILLIC : SURNAMES)
+                : female ? (cyrillic ? FEMALE_NAMES_CYRILLIC : FEMALE_NAMES) : (cyrillic ? MALE_NAMES_CYRILLIC : MALE_NAMES);
+        String ending = surname && female ? (cyrillic ? "а" : "a") : "";
+        // Many names in one request use up the list, so later attempts join two names, then add a number.
+        if (attempt < names.size()) {
+            return pick(names, random) + ending;
+        }
+        String joined = pick(names, random) + ending + "-" + pick(names, random) + ending;
+        return attempt < names.size() * names.size() ? joined : joined + attempt;
+    }
+
+    private static String pick(List<String> values, SplittableRandom random) {
+        return values.get(random.nextInt(values.size()));
     }
 
     private static String apiKey(String value, SplittableRandom random) {

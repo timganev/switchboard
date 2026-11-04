@@ -7,6 +7,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 import java.net.URI;
+import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,7 +24,7 @@ class LocalDecisionModelTest {
     @Test
     void shouldKeepOnlyTheClaimsThatTheTextProves() {
         assertThat(LocalDecisionModel.categories("{\"names\": [\"Ivan Petrov\"], \"health\": [\"knee surgery\"]}", TEXT))
-                .isEqualTo(new Classification(Set.of("NAME", "HEALTH"), false));
+                .isEqualTo(new Classification(Set.of("NAME", "HEALTH"), List.of("Ivan Petrov"), false));
         // A role is not a name, and words that are not in the text prove nothing.
         assertThat(LocalDecisionModel.categories("{\"names\": [\"the customer\"], \"health\": [\"a broken arm\"]}", TEXT))
                 .isEqualTo(Classification.NOTHING);
@@ -50,7 +51,7 @@ class LocalDecisionModelTest {
         server.expect(requestTo("http://local/v1/chat/completions")).andRespond(withServerError());
         LocalDecisionModel model = new LocalDecisionModel(builder.build(), "small", "none");
 
-        assertThat(model.classify("Ivan Petrov is a nurse")).isEqualTo(new Classification(Set.of("NAME"), false));
+        assertThat(model.classify("Ivan Petrov is a nurse")).isEqualTo(new Classification(Set.of("NAME"), List.of("Ivan Petrov"), false));
         assertThat(model.classify("Ivan Petrov is a nurse")).isEqualTo(Classification.FAILED);
         assertThat(model.ref().name()).isEqualTo("small");
         server.verify();

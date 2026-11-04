@@ -39,6 +39,6 @@ class GuardianController {
 
     @PostMapping("/restore")
     Restoration restore(@RequestBody RestoreRequest request) {
-        return guardian.restore(request.original(), request.response());
+        return guardian.restore(request.original(), request.response(), request.substitutions());
     }
 }

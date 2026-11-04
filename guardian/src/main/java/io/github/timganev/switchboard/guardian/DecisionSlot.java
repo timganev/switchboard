@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Runs the detectors first and asks the decision model only when its answer could still tighten the route.
+ * Asks the decision model only when it could still tighten the route; names alone become surrogates, anything else keeps the request in.
  */
 @Service
 public class DecisionSlot {
@@ -40,6 +40,9 @@ public class DecisionSlot {
         Classification classification = decisionModel.classify(String.join("\n", ChatTexts.of(request)));
         if (!classification.found()) {
             return new Decision(inspection, model, false);
+        }
+        if (classification.onlyNames()) {
+            return new Decision(guardian.inspect(request, classification.names()), model, true);
         }
         List<SensitivityReason> reasons = new ArrayList<>(inspection.reasons());
         classification.categories().stream().sorted().forEach(category -> reasons.add(new SensitivityReason(category, 1)));

@@ -155,9 +155,14 @@ There is no cloud option: asking a cloud model whether a prompt is sensitive wou
 out. The model answers in JSON that the server holds to a schema, with the words that prove each
 category (`{"names": ["Anna Georgieva"], "health": ["follow-up visit"]}`), so it cannot reason in prose
 before it answers. A claim whose words are not in the text is dropped, and a name must be
-capitalised words, not a role like "the customer". A finding keeps the request `LOCAL` (or `BLOCK`),
-because there are no values to swap for surrogates. A timeout or an answer that is not an answer
-counts as a finding. The trace records which model and prompt version took part and whether the model
+capitalised words, not a role like "the customer". Names alone are swapped for surrogates like the
+detectors' values: each word for a first name or a surname of the same gender and alphabet, replaced
+only as a whole word, so the cloud still gets the task (`Radka Petrova` goes out as `Maria Dimitrova`,
+`Мария Иванова` as `Десислава Колева`). The policy decides as for any type, so `NAME: LOCAL` keeps named
+prompts in. Since the names come from a model and cannot be rebuilt from the request, the gateway hands
+the inspection's substitutions back when it asks for the restore. Health data keeps the request `LOCAL`
+(or `BLOCK`), because there is no value to swap, and so does a timeout or an answer that is not an
+answer. The trace records which model and prompt version took part and whether the model
 tightened the verdict. The slot is off by default:
 
 ```yaml
@@ -327,7 +332,7 @@ what leaves:
 | `MASK` | what the guardian found, replaced by `***` |
 | `PLACEHOLDER` | what the guardian found, replaced by `[EGN_1]`, `[PHONE_1]`… |
 | `SURROGATE` | what the guardian really sends: realistic fake values |
-| `SURROGATE_MODEL` | the same with the [decision model slot](#the-decision-model-slot) on: nothing when the model finds a name or health data |
+| `SURROGATE_MODEL` | the same with the [decision model slot](#the-decision-model-slot) on: names as surrogates too, nothing when the model finds health data |
 | `LOCAL` | nothing |
 
 Two numbers per strategy: the share of real values that left, and how often an attacker model names
@@ -351,7 +356,8 @@ curl localhost:8084/v1/runs/<run id>/chart.svg
 
 Run of 3 November 2026: 20 prompts, 50 real values, seed 42, `qwen3.6:35b-a3b` as attacker and judge
 (thinking), as both answer models (no thinking) and as the decision model (JSON schema, no thinking);
-85 minutes on an Apple Silicon laptop. The raw scores are in
+85 minutes on an Apple Silicon laptop; in this run the slot still kept named prompts local, before
+surrogate names. The raw scores are in
 [`docs/leak-lab-run-2026-11-03-json-mode.json`](docs/leak-lab-run-2026-11-03-json-mode.json). The runs
 of 2 November are in [`docs/leak-lab-run-2026-11-02-decision-model.json`](docs/leak-lab-run-2026-11-02-decision-model.json)
 (the decision model in free text with a little thinking) and
@@ -528,7 +534,7 @@ curl -X POST 'localhost:8084/v1/runs?cases=20'
   - [ ] A larger run (all 40 people, several seeds), so one case is no longer ten points
   - [ ] A weaker local model for `LOCAL`, so its quality is measured rather than borrowed from the cloud stand-in
   - [ ] Recall and precision of the detectors and of the decision model, and the time each adds
-  - [ ] Surrogate names instead of keeping every named prompt local, so the cloud still gets the task
+  - [x] Surrogate names instead of keeping every named prompt local, so the cloud still gets the task
   - [ ] Runs published as an `eval-run-completed` event, and the chart on GitHub Pages
 - [ ] **5. Hardening:** what a team would need before trusting it
   - [x] API keys per team, like OpenAI and Anthropic: `Authorization: Bearer sb-…` or `x-api-key`, only a

@@ -60,7 +60,7 @@ class ChatPipelineTest {
     void shouldSendOnlySurrogatesOutAndRestoreTheAnswer() {
         when(guardianClient.inspect(ORIGINAL, call.callId(), null)).thenReturn(new Inspection(Route.SURROGATE, EGN, SURROGATED, SUBSTITUTIONS));
         when(dispatcher.send(EnumSet.allOf(Locality.class), SURROGATED)).thenReturn(new Dispatched<>(CLOUD_BACKEND, answer("About 8807143345")));
-        when(guardianClient.restore(ORIGINAL, answer("About 8807143345")))
+        when(guardianClient.restore(ORIGINAL, answer("About 8807143345"), SUBSTITUTIONS))
                 .thenReturn(new Restoration(answer("About 7501020018"), List.of()));
 
         ChatPipeline.Answer answer = pipeline.send(call, ORIGINAL);
@@ -80,7 +80,7 @@ class ChatPipelineTest {
 
         pipeline.send(call, ORIGINAL);
 
-        verify(guardianClient, never()).restore(any(), any());
+        verify(guardianClient, never()).restore(any(), any(), any());
     }
 
     @Test
@@ -135,7 +135,7 @@ class ChatPipelineTest {
                 .collect(Collectors.joining());
         assertThat(text).isEqualTo("About 750102-0018, fine.");
         assertThat(events.getLast()).isEqualTo(new StreamEvent.MessageFinished(StopReason.END_TURN, new Usage(1, 1)));
-        verify(guardianClient, never()).restore(any(), any());
+        verify(guardianClient, never()).restore(any(), any(), any());
     }
 
     private static ChatRequest request(String text) {

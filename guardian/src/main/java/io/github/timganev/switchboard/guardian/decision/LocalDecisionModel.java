@@ -83,13 +83,17 @@ public class LocalDecisionModel implements DecisionModel {
             return Classification.FAILED;
         }
         Set<String> found = new HashSet<>();
-        if (node.path("names").valueStream().map(JsonNode::asString).anyMatch(words -> inText(words, text) && CAPITALISED.matcher(words).matches())) {
+        List<String> names = node.path("names").valueStream().map(JsonNode::asString).map(String::strip)
+                .filter(words -> inText(words, text) && CAPITALISED.matcher(words).matches())
+                .distinct()
+                .toList();
+        if (!names.isEmpty()) {
             found.add("NAME");
         }
         if (node.path("health").valueStream().map(JsonNode::asString).anyMatch(words -> inText(words, text))) {
             found.add("HEALTH");
         }
-        return new Classification(found, false);
+        return new Classification(found, names, false);
     }
 
     private static boolean inText(String words, String text) {

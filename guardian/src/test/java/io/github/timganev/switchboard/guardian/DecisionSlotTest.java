@@ -48,7 +48,30 @@ class DecisionSlotTest {
     }
 
     @Test
-    void shouldKeepTheRequestLocalWhenTheModelFindsAName() {
+    void shouldSwapTheNamesTheModelFoundForSurrogates() {
+        when(model.classify(anyString())).thenReturn(new Classification(Set.of("NAME"), List.of("Ivan Petrov"), false));
+
+        DecisionSlot.Decision decision = slot(model, null).decide(request("Ivan Petrov, EGN 7501020018"));
+
+        assertThat(decision.inspection().route()).isEqualTo(Route.SURROGATE);
+        assertThat(decision.inspection().reasons()).containsExactly(new SensitivityReason("EGN", 1), new SensitivityReason("NAME", 2));
+        assertThat(String.join(" ", ChatTexts.of(decision.inspection().request())))
+                .doesNotContain("Ivan").doesNotContain("Petrov").doesNotContain("7501020018");
+        assertThat(decision.escalatedByModel()).isTrue();
+    }
+
+    @Test
+    void shouldKeepTheRequestLocalWhenHealthDataComesWithTheName() {
+        when(model.classify(anyString())).thenReturn(new Classification(Set.of("NAME", "HEALTH"), List.of("Ivan Petrov"), false));
+
+        DecisionSlot.Decision decision = slot(model, null).decide(request("Ivan Petrov missed his knee surgery"));
+
+        assertThat(decision.inspection().route()).isEqualTo(Route.LOCAL);
+        assertThat(decision.inspection().substitutions()).isEmpty();
+    }
+
+    @Test
+    void shouldKeepTheRequestLocalWhenTheModelNamesNoWordsForAName() {
         when(model.classify(anyString())).thenReturn(new Classification(Set.of("NAME"), false));
 
         DecisionSlot.Decision decision = slot(model, null).decide(request("Ivan Petrov, EGN 7501020018"));

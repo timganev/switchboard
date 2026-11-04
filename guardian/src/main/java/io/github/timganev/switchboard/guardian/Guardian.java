@@ -48,7 +48,20 @@ public class Guardian {
     }
 
     public Inspection inspect(ChatRequest request) {
+        return inspect(request, List.of());
+    }
+
+    /**
+     * Inspects the request with names that the decision model found in it, each word of a name on its own.
+     */
+    public Inspection inspect(ChatRequest request, List<String> names) {
         Map<SensitiveType, Set<String>> found = scan(ChatTexts.of(request));
+        Set<String> nameWords = new LinkedHashSet<>();
+        names.forEach(name -> nameWords.addAll(List.of(name.strip().split("\\s+"))));
+        nameWords.remove("");
+        if (!nameWords.isEmpty()) {
+            found.put(SensitiveType.NAME, nameWords);
+        }
         Route route = found.keySet().stream()
                 .map(properties.policy()::get)
                 .max(Comparator.naturalOrder())
@@ -69,12 +82,15 @@ public class Guardian {
         };
     }
 
-    public Restoration restore(ChatRequest original, ChatResponse response) {
+    // The gateway passes the substitutions of the inspection, since names come from a model and cannot be rebuilt.
+    public Restoration restore(ChatRequest original, ChatResponse response, List<Substitution> given) {
         Map<SensitiveType, Set<String>> found = scan(ChatTexts.of(original));
-        SurrogateRestorer restorer = new SurrogateRestorer(substitutions(original, found));
+        List<Substitution> substitutions = given == null ? substitutions(original, found) : given;
+        SurrogateRestorer restorer = new SurrogateRestorer(substitutions);
         ChatResponse restored = ChatTexts.map(response, restorer::restore);
 
         Set<String> known = found.values().stream().flatMap(Set::stream).collect(Collectors.toSet());
+        substitutions.forEach(substitution -> known.add(substitution.value()));
         Map<SensitiveType, Set<String>> produced = scan(ChatTexts.of(restored));
         produced.values().forEach(values -> values.removeAll(known));
         List<SensitivityReason> responseReasons = produced.entrySet().stream()

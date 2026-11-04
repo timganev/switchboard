@@ -6,12 +6,14 @@ import io.github.timganev.switchboard.commons.chat.ChatResponse;
 import io.github.timganev.switchboard.commons.privacy.Inspection;
 import io.github.timganev.switchboard.commons.privacy.Restoration;
 import io.github.timganev.switchboard.commons.privacy.RestoreRequest;
+import io.github.timganev.switchboard.commons.privacy.Substitution;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -35,8 +37,8 @@ public class GuardianClient {
         });
     }
 
-    public Restoration restore(ChatRequest original, ChatResponse response) {
-        return call("/v1/restore", new RestoreRequest(original, response), Restoration.class, headers -> {
+    public Restoration restore(ChatRequest original, ChatResponse response, List<Substitution> substitutions) {
+        return call("/v1/restore", new RestoreRequest(original, response, substitutions), Restoration.class, headers -> {
         });
     }
 

@@ -10,5 +10,7 @@ public enum SensitiveType {
     CARD,
     PHONE,
     EGN,
-    LNCH
+    LNCH,
+    // Found by the decision model, not by the detectors.
+    NAME
 }

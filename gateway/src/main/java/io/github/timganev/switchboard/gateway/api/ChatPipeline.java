@@ -47,7 +47,7 @@ class ChatPipeline {
         if (inspection.route() != Route.SURROGATE) {
             return new Answer(inspection, dispatched.result(), List.of());
         }
-        Restoration restoration = guardianClient.restore(request, dispatched.result());
+        Restoration restoration = guardianClient.restore(request, dispatched.result(), inspection.substitutions());
         return new Answer(inspection, restoration.response(), restoration.responseReasons());
     }
 
