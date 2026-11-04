@@ -80,6 +80,8 @@ services:
       args:
         MODULE: gateway
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
@@ -92,6 +94,10 @@ services:
       SWITCHBOARD_GUARDIAN_URL: http://guardian:8081
       SWITCHBOARD_BOARD_TYPE: redis
       SPRING_DATA_REDIS_HOST: redis
+      SWITCHBOARD_AUTH_TYPE: api-key
+      # A demo value; set your own outside of local runs.
+      SWITCHBOARD_AUTH_ADMIN_TOKEN: ${SWITCHBOARD_AUTH_ADMIN_TOKEN:-local-demo-admin-token-change-me-0123}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/switchboard
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     ports:
       - "8080:8080"

@@ -19,6 +19,8 @@ import java.time.Instant;
 public class CallEvents {
 
     static final String DEFAULT_TEAM = "default";
+    // Set when the caller authenticated with a key; it wins over the header.
+    public static final String TEAM_ATTRIBUTE = CallEvents.class.getName() + ".team";
     private static final String ATTRIBUTE = CallRecord.class.getName();
     private static final Usage NO_USAGE = new Usage(0, 0);
 
@@ -30,9 +32,9 @@ public class CallEvents {
         this.clock = clock;
     }
 
-    // Until teams authenticate, the team is whatever the client names in the header.
+    // Without API keys, the team is whatever the client names in the header.
     public CallRecord start(HttpServletRequest request, ClientFormat clientFormat, String model) {
-        String team = request.getHeader(CallHeaders.TEAM);
+        String team = request.getAttribute(TEAM_ATTRIBUTE) instanceof String authenticated ? authenticated : request.getHeader(CallHeaders.TEAM);
         CallRecord call = new CallRecord(request.getHeader(CallHeaders.SESSION),
                 team == null || team.isBlank() ? DEFAULT_TEAM : team.strip(), clientFormat, model);
         request.setAttribute(ATTRIBUTE, call);

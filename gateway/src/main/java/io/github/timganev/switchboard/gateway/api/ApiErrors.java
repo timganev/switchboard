@@ -1,6 +1,7 @@
 package io.github.timganev.switchboard.gateway.api;
 
 import io.github.timganev.switchboard.commons.Route;
+import io.github.timganev.switchboard.gateway.auth.UnauthorizedException;
 import io.github.timganev.switchboard.gateway.backend.NoBackendAvailableException;
 import io.github.timganev.switchboard.gateway.budget.BudgetExceededException;
 import io.github.timganev.switchboard.gateway.events.CallEvents;
@@ -36,6 +37,11 @@ class ApiErrors {
     @ExceptionHandler(IllegalArgumentException.class)
     ResponseEntity<ObjectNode> invalidRequest(IllegalArgumentException exception, HttpServletRequest request) {
         return error(request, HttpStatus.BAD_REQUEST, "invalid_request_error", exception.getMessage());
+    }
+
+    @ExceptionHandler(UnauthorizedException.class)
+    ResponseEntity<ObjectNode> unauthorized(UnauthorizedException exception, HttpServletRequest request) {
+        return error(request, HttpStatus.UNAUTHORIZED, "authentication_error", exception.getMessage());
     }
 
     @ExceptionHandler(RestClientException.class)

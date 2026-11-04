@@ -27,6 +27,7 @@ class DetectorTest {
             "EMAIL   | maria.ivanova@firma.bg",
             "API_KEY | sk-ant-api03-abcdefghijklmnopqrstuvwxyz012345",
             "API_KEY | AKIAIOSFODNN7EXAMPLE",
+            "API_KEY | sb-q8Zr0lWm3vXa9TbK2nYc7HdE4fJu1gPs6iLo5kQwRtA",
             "JWT     | eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
             "PRIVATE_KEY | -----BEGIN RSA PRIVATE KEY-----"})
     void shouldFindEachSensitiveType(SensitiveType type, String value) {

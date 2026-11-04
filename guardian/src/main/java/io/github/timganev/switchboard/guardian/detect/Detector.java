@@ -24,7 +24,7 @@ public class Detector {
             new Rule(SensitiveType.PRIVATE_KEY, "-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----", value -> true),
             new Rule(SensitiveType.JWT, "\\beyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", value -> true),
             new Rule(SensitiveType.API_KEY, "\\b(?:sk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36}"
-                    + "|github_pat_[A-Za-z0-9_]{22,}|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35})", value -> true),
+                    + "|github_pat_[A-Za-z0-9_]{22,}|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sb-[A-Za-z0-9_-]{43})", value -> true),
             new Rule(SensitiveType.EMAIL, "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b", value -> true),
             new Rule(SensitiveType.IBAN, "\\b[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\\b", Checksums::isIban),
             new Rule(SensitiveType.CARD, "(?<!\\d)\\d(?:[ -]?\\d){12,18}(?!\\d)", Checksums::isCard),

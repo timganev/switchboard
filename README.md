@@ -7,8 +7,8 @@ must not leave. Switchboard is the single door all LLM traffic goes through. For
 decides where the request may go, sends it there, and records why.
 
 > **Status:** the gateway, the guardian, the ledger and the trace work: both APIs, streaming, the
-> in-flight board, surrogates and restore, events, budgets reconciled with the bill, masked traces
-> and the live view. Leak Lab measures leakage, re-identification, answer quality, cost and latency per
+> in-flight board, surrogates and restore, events, budgets reconciled with the bill, masked traces,
+> the live view and API keys per team; the whole stack starts from compose and is checked end to end. Leak Lab measures leakage, re-identification, answer quality, cost and latency per
 > strategy, with the decision model slot and without; hardening is next (see [Roadmap](#roadmap)).
 
 ## Principles
@@ -78,7 +78,7 @@ decides where the request may go, sends it there, and records why.
 
 | Service | Role | Owns data |
 |---|---|---|
-| `gateway` | **Doorman and dispatcher.** Authenticates teams, translates the OpenAI and Anthropic formats into one request, asks the guardian for a verdict, picks the least busy healthy model instance inside the allowed set, streams the answer back. Holds the decision model slot for task difficulty | Redis: the in-flight board (shared by all gateway replicas) |
+| `gateway` | **Doorman and dispatcher.** Authenticates teams, translates the OpenAI and Anthropic formats into one request, asks the guardian for a verdict, picks the least busy healthy model instance inside the allowed set, streams the answer back. Holds the decision model slot for task difficulty | Redis: the in-flight board (shared by all gateway replicas). Postgres: hashes of the teams' API keys |
 | `guardian` | **Guardian and judge.** Finds sensitive data in every part of the request, has the final word on the route, swaps values for surrogates and restores them, guards agents against the lethal trifecta. Holds the decision model slot for unclear sensitivity, which accepts only a local model. A separate process so the security boundary can be tested and attacked on its own | Nothing at rest |
 | `ledger` | **Accountant.** Prices every call, aggregates spend per team, publishes the budget state | Postgres: the system of record for money |
 | `trace` | **Black box.** What happened and why; feeds the live view | OpenSearch: masked traces and decisions, never raw sensitive values |
@@ -210,8 +210,38 @@ Privacy events carry the type and count of what was found, never the value.
 The gateway publishes one `llm-call-completed` for every call however it ends (answered, blocked,
 refused, failed), keyed by team; the guardian publishes one `privacy-decision-made` for every verdict,
 under the same call id (`X-Switchboard-Call-Id`). Events go out on a virtual thread, so a slow or
-missing broker never delays or fails a request. Until teams authenticate, the team comes from the
-`X-Switchboard-Team` header (`default` when absent) and the session from `X-Switchboard-Session`.
+missing broker never delays or fails a request. With API keys on, the team comes from the caller's key;
+without them, from the `X-Switchboard-Team` header (`default` when absent). The session comes from
+`X-Switchboard-Session`.
+
+### API keys
+
+Each team gets keys like the ones OpenAI and Anthropic issue (`sb-` and 43 random characters), and
+sends one as `Authorization: Bearer <key>` or as `x-api-key`, which is where Claude Code and the
+Anthropic SDKs put it. The gateway then takes the team from the key and ignores the team header. A
+missing, unknown or revoked key gets a 401 in the caller's format. An admin issues, lists and revokes
+keys at `/admin/keys` with the admin token. Postgres keeps only a SHA-256 hash of each key and its
+first ten characters for display; the key itself is in the answer that issues it and nowhere else. A
+check is one read by the hash, and the last use is written at most once a minute per key, so a busy key
+does not turn every request into a write. The guardian knows the `sb-` prefix, so a key pasted into a
+prompt goes out as a surrogate. Keys are off by default (`switchboard.auth.type: none`) and on in the
+compose stack:
+
+```bash
+curl localhost:8080/admin/keys -H 'Authorization: Bearer local-demo-admin-token-change-me-0123' \
+  -H 'Content-Type: application/json' -d '{"team": "payments"}'     # {"id": ..., "key": "sb-...", ...}
+curl localhost:8080/v1/chat/completions -H 'Authorization: Bearer sb-...' -H 'Content-Type: application/json' \
+  -d '{"model": "qwen36", "messages": [{"role": "user", "content": "Hi"}]}'
+curl -X DELETE localhost:8080/admin/keys/<id> -H 'Authorization: Bearer local-demo-admin-token-change-me-0123'
+```
+
+**Why API keys and not JWT.** Coding agents already send a bearer key, so nothing changes for them. There is no
+identity server to run, and a revoked key stops working on the next request. A JWT is checked without a lookup,
+but it stays valid until it expires, so revoking it needs a deny list, which is a lookup again. A user login
+would bring JWT through the Spring OAuth2 resource server, but the gateway serves teams and their agents, not
+people. Good to discuss: why only the hash is stored (a leaked table gives no keys, and SHA-256 is enough
+because the keys are random, unlike passwords), comparing in constant time, a recognisable prefix so the
+guardian and secret scanners catch a leaked key, and rotating with two live keys per team.
 
 ### Budgets
 
@@ -401,9 +431,10 @@ docker compose -f deploy/compose.yml up -d --wait   # infrastructure first, then
 deploy/smoke.sh                                 # checks the whole stack end to end
 ```
 
-`deploy/smoke.sh` sends requests through the gateway in both formats and checks that every service is
-up, an EGN goes out as a surrogate, a private key is blocked, the ledger keeps the team's budget, the
-trace merges each call with its verdict and the real EGN is nowhere in OpenSearch. It works the same
+`deploy/smoke.sh` issues an API key, sends requests through the gateway in both formats and checks that
+every service is up, a request without a key or with a revoked one is refused, an EGN goes out as a
+surrogate, a private key is blocked, the ledger keeps the team's budget, the trace merges each call with
+its verdict and the real EGN is nowhere in OpenSearch. It works the same
 with Podman (`podman compose`). Leak Lab in the stack reaches the models on the host at
 `host.docker.internal:11434`; set `OLLAMA_URL` to use another endpoint.
 
@@ -500,8 +531,8 @@ curl -X POST 'localhost:8084/v1/runs?cases=20'
   - [ ] Surrogate names instead of keeping every named prompt local, so the cloud still gets the task
   - [ ] Runs published as an `eval-run-completed` event, and the chart on GitHub Pages
 - [ ] **5. Hardening:** what a team would need before trusting it
-  - [ ] API keys per team, like OpenAI and Anthropic: `Authorization: Bearer sb-…`, only a SHA-256 hash in
-        Postgres, the team taken from the key instead of a header, issue and revoke endpoints, `last_used_at`
+  - [x] API keys per team, like OpenAI and Anthropic: `Authorization: Bearer sb-…` or `x-api-key`, only a
+        SHA-256 hash in Postgres, the team taken from the key instead of a header, issue and revoke endpoints
   - [ ] `SKETCH`: the cloud model drafts on de-identified text, a local model fills in the real details
   - [ ] Lethal trifecta guard on the agent's tool list
   - [ ] The difficulty slot in the gateway: easy tasks to a cheaper model, measured like the privacy slot
@@ -509,14 +540,6 @@ curl -X POST 'localhost:8084/v1/runs?cases=20'
         spending the whole `max_tokens` before it answers
   - [x] The whole stack from `deploy/compose.yml` started and checked end to end (`deploy/smoke.sh`)
   - [ ] Helm charts and system tests running as a Kubernetes Job, with Allure reports on GitHub Pages
-
-**Why API keys and not JWT.** Coding agents already send a bearer key, so nothing changes for them. There is no
-identity server to run, and a revoked key stops working on the next request. A JWT is checked without a lookup,
-but it stays valid until it expires, so revoking it needs a deny list, which is a lookup again. A user login
-would bring JWT through the Spring OAuth2 resource server, but the gateway serves teams and their agents, not
-people. Good to discuss: why only the hash is stored (a leaked table gives no keys, and SHA-256 is enough
-because the keys are random, unlike passwords), comparing in constant time, a recognisable prefix so the
-guardian and secret scanners catch a leaked key, and rotating with two live keys per team.
 
 **To decide**
 - [ ] **Adaptive limits on top of the board.** The board counts requests, but the safe limit per

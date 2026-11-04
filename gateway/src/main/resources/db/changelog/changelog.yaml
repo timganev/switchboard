@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1-api-keys
+      author: tim
+      changes:
+        - createTable:
+            tableName: api_key
+            remarks: Only a hash of each key; the key itself is shown once, when it is issued
+            columns:
+              - column: { name: id, type: varchar(36), constraints: { primaryKey: true } }
+              - column: { name: team, type: varchar(200), constraints: { nullable: false } }
+              - column: { name: key_hash, type: varchar(64), constraints: { nullable: false, unique: true } }
+              - column: { name: key_prefix, type: varchar(16), constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: last_used_at, type: timestamptz }
+              - column: { name: revoked_at, type: timestamptz }
+        - createIndex:
+            tableName: api_key
+            indexName: api_key_team
+            columns:
+              - column: { name: team }
